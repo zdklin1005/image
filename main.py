@@ -78,6 +78,10 @@ def run_fruit_assessment(
         "display_image"
     ]
 
+    classification_image = preprocessing_results[
+        "classification_image"
+    ]
+
     blur_score = preprocessing_results[
         "blur_score"
     ]
@@ -86,12 +90,92 @@ def run_fruit_assessment(
         "is_blurry"
     ]
 
+    mean_brightness = preprocessing_results[
+        "mean_brightness"
+    ]
+
+    contrast_score = preprocessing_results[
+        "contrast_score"
+    ]
+
+    dynamic_range = preprocessing_results[
+        "dynamic_range"
+    ]
+
+    dark_pixel_ratio = preprocessing_results[
+        "dark_pixel_ratio"
+    ]
+
+    bright_pixel_ratio = preprocessing_results[
+        "bright_pixel_ratio"
+    ]
+
+    resize_scale = preprocessing_results[
+        "resize_scale"
+    ]
+
+    resize_padding = preprocessing_results[
+        "resize_padding"
+    ]
+
+    output_size = preprocessing_results[
+        "output_size"
+    ]
+
     print("\nImage Preprocessing")
     print("------------------------------")
 
     print(
         f"Blur score : "
         f"{blur_score:.2f}"
+    )
+
+    print(
+        f"Mean brightness : "
+        f"{mean_brightness:.2f}"
+    )
+
+    print(
+        f"Contrast score  : "
+        f"{contrast_score:.2f}"
+    )
+
+    print(
+        f"Dynamic range   : "
+        f"{dynamic_range:.2f}"
+    )
+
+    print(
+        f"Dark pixels     : "
+        f"{dark_pixel_ratio:.2%}"
+    )
+
+    print(
+        f"Bright pixels   : "
+        f"{bright_pixel_ratio:.2%}"
+    )
+
+    print(
+        "Median filter   : Applied (5 x 5)"
+    )
+
+    print(
+        "Bilateral filter: Applied"
+    )
+
+    print(
+        f"Output size     : "
+        f"{output_size[0]} x {output_size[1]}"
+    )
+
+    print(
+        f"Resize scale    : "
+        f"{resize_scale:.4f}"
+    )
+
+    print(
+        "Resize padding  : "
+        f"{resize_padding}"
     )
 
     if is_blurry:
@@ -310,12 +394,12 @@ def run_fruit_assessment(
     # ========================================================
 
     detections = detect_fruit_ripeness(
-        working_image,
+        classification_image,
         confidence_threshold=0.40
     )
 
     detection_image = draw_detections(
-        working_image,
+        classification_image,
         detections
     )
 
@@ -363,6 +447,7 @@ def run_fruit_assessment(
 
     return {
     "analysis_image": analysis_image,
+    "classification_image": classification_image,
     "working_image": working_image,
 
     "gray_image": gray_image,
@@ -394,6 +479,16 @@ def run_fruit_assessment(
 
     "blur_score": blur_score,
     "is_blurry": is_blurry,
+
+    "mean_brightness": mean_brightness,
+    "contrast_score": contrast_score,
+    "dynamic_range": dynamic_range,
+    "dark_pixel_ratio": dark_pixel_ratio,
+    "bright_pixel_ratio": bright_pixel_ratio,
+
+    "resize_scale": resize_scale,
+    "resize_padding": resize_padding,
+    "output_size": output_size,
 
     "detections": detections,
     "detection_image": detection_image
