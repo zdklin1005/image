@@ -96,7 +96,7 @@ def calculate_blur_score(image, reference_width=256):
 
 
 def calculate_input_quality_metrics(image):
-    """Measure exposure and contrast before enhancement is applied."""
+    #Measure exposure and contrast before enhancement is applied.
     hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     value_channel = hsv_image[:, :, 2]
 
