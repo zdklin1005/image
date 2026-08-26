@@ -1,0 +1,10 @@
+# Python virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Generated calibration/segmentation outputs
+calibration_segmentation/outputs/*
+!calibration_segmentation/outputs/.gitkeep
