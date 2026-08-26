@@ -31,6 +31,23 @@ from fruit_ripeness_object_detection.detection import (
     draw_detections
 )
 
+def resize_for_display(image, max_width=1200, max_height=850):
+    height, width = image.shape[:2]
+
+    scale = min(
+        max_width / width,
+        max_height / height
+    )
+
+    new_width = int(width * scale)
+    new_height = int(height * scale)
+
+    return cv2.resize(
+        image,
+        (new_width, new_height),
+        interpolation=cv2.INTER_LINEAR
+    )
+
 def run_fruit_assessment(
     image_path,
     calibration_mode=False,
@@ -425,16 +442,28 @@ if __name__ == "__main__":
     cv2.destroyAllWindows()
 
     # Fruit ripeness detection
-    cv2.namedWindow(
-            "Fruit Detection and Ripeness",
-            cv2.WINDOW_NORMAL
-        )
-    
-    cv2.imshow(
-        "Fruit Detection and Ripeness",
+    display_detection_image = resize_for_display(
         results["detection_image"]
     )
 
+    cv2.namedWindow(
+        "Fruit Detection and Ripeness",
+        cv2.WINDOW_NORMAL
+    )
+
+    height, width = display_detection_image.shape[:2]
+
+    cv2.resizeWindow(
+        "Fruit Detection and Ripeness",
+        width,
+        height
+    )
+
+    cv2.imshow(
+        "Fruit Detection and Ripeness",
+        display_detection_image
+    )
+    
     print("\nPress any key on an image window to exit the program.")
 
     cv2.waitKey(0)
