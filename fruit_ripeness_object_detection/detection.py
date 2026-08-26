@@ -18,6 +18,25 @@ MODEL_PATH = PROJECT_ROOT / "models" / "best.pt"
 model = YOLO(str(MODEL_PATH))
 
 
+def parse_class_name(class_name):
+    """Split a model class label without assuming it contains a space."""
+    cleaned_name = str(class_name).replace("_", " ").replace("-", " ").strip()
+    words = cleaned_name.split()
+
+    if len(words) < 2:
+        return cleaned_name, "Unknown"
+
+    ripeness_terms = {"fresh", "ripe", "unripe", "overripe", "rotten"}
+
+    if words[0].lower() in ripeness_terms:
+        return " ".join(words[1:]), words[0]
+
+    if words[-1].lower() in ripeness_terms:
+        return " ".join(words[:-1]), words[-1]
+
+    return cleaned_name, "Unknown"
+
+
 # ============================================================
 # FRUIT DETECTION + RIPENESS CLASSIFICATION
 # ============================================================
@@ -67,10 +86,7 @@ def detect_fruit_ripeness(
         full_class = model.names[class_id]
 
         # Separate fruit type and ripeness
-        fruit_type, ripeness = full_class.rsplit(
-            " ",
-            1
-        )
+        fruit_type, ripeness = parse_class_name(full_class)
 
         # Get bounding box coordinates
         x1, y1, x2, y2 = (
