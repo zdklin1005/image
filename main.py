@@ -31,6 +31,10 @@ from fruit_ripeness_object_detection.detection import (
     draw_detections
 )
 
+from fruit_ripeness_object_detection.blemish import (
+    detect_fruit_blemish
+)
+
 def resize_for_display(image, max_width=1200, max_height=850):
     height, width = image.shape[:2]
 
@@ -407,11 +411,9 @@ def run_fruit_assessment(
     print("------------------------------")
 
     if len(detections) == 0:
-
         print("No fruit detected.")
 
     else:
-
         for index, detection in enumerate(
             detections,
             start=1
@@ -440,6 +442,52 @@ def run_fruit_assessment(
                 f"Bounding box : "
                 f"{detection['bounding_box']}\n"
             )
+
+    # ========================================================
+    # MEMBER 3: BLEMISH ANALYSIS
+    # ========================================================
+    blemish_results = None
+
+    if len(detections) == 0:
+
+        print("\nBlemish Analysis")
+        print("------------------------------")
+        print("Skipped - no detected fruit class available.")
+
+    else:
+        # Use the highest-confidence detection
+        primary_detection = max(
+            detections,
+            key=lambda detection: detection["confidence"]
+        )
+
+        primary_fruit_type = primary_detection[
+            "fruit_type"
+        ]
+
+        blemish_results = detect_fruit_blemish(
+            image=working_image,
+            fruit_mask=fruit_mask,
+            fruit_type=primary_fruit_type,
+            opening_kernel_size=3,
+            closing_kernel_size=5,
+            min_component_area=60
+        )
+
+        print("\nBlemish Analysis")
+        print("------------------------------")
+        print(
+            f"Fruit type used    : "
+            f"{blemish_results['fruit_type_used']}"
+        )
+        print(
+            f"Blemish area       : "
+            f"{blemish_results['blemish_area_pixels']} pixels^2"
+        )
+        print(
+            f"Blemish Percentage : "
+            f"{blemish_results['blemish_percentage']:.2f}%"
+        )
 
     # ========================================================
     # RETURN RESULTS
@@ -491,7 +539,27 @@ def run_fruit_assessment(
     "output_size": output_size,
 
     "detections": detections,
-    "detection_image": detection_image
+    "detection_image": detection_image,
+
+    "blemish_mask": (
+        blemish_results["blemish_mask"]
+        if blemish_results is not None else None
+    ),
+
+    "blemish_overlay": (
+        blemish_results["blemish_overlay"]
+        if blemish_results is not None else None
+    ),
+
+    "blemish_area_pixels": (
+        blemish_results["blemish_area_pixels"]
+        if blemish_results is not None else 0
+    ),
+
+    "blemish_percentage": (
+        blemish_results["blemish_percentage"]
+        if blemish_results is not None else 0.0
+    ),
 }
 
 
@@ -558,8 +626,40 @@ if __name__ == "__main__":
         "Fruit Detection and Ripeness",
         display_detection_image
     )
-    
-    print("\nPress any key on an image window to exit the program.")
 
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    # Blemish calculation
+    if results["blemish_mask"] is not None:
+        cv2.namedWindow(
+            "Blemish Detection",
+            cv2.WINDOW_NORMAL
+        )
+
+        cv2.imshow(
+            "Blemish Detection",
+            results["blemish_mask"]
+        )
+
+        cv2.namedWindow(
+            "Blemish Overlay",
+            cv2.WINDOW_NORMAL
+        )
+
+        cv2.imshow(
+            "Blemish Overlay",
+            results["blemish_overlay"]
+        )
+
+        print(
+            f"\nBlemish Percentage: "
+            f"{results['blemish_percentage']:.2f}%"
+        )
+
+        print("\nPress any key on an image window to exit the program.")
+
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+        
+#    print("\nPress any key on an image window to exit the program.")
+#
+#    cv2.waitKey(0)
+#    cv2.destroyAllWindows()

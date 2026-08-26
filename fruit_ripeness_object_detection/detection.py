@@ -136,8 +136,7 @@ def draw_detections(
         Image with bounding boxes and labels.
     """
 
-    # Make a copy so the original image
-    # is not changed
+    # Make a copy so the original image is not changed
     output_image = image.copy()
 
     # Draw every detected fruit
