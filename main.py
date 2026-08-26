@@ -11,7 +11,9 @@ from calibration_segmentation.calibration import (
 
 from calibration_segmentation.segmentation import (
     segment_fruit_otsu,
-    refine_fruit_mask
+    combine_otsu_masks_constrained,
+    refine_fruit_mask,
+    apply_watershed_segmentation
 )
 
 from calibration_segmentation.measurement import (
@@ -159,6 +161,11 @@ def run_fruit_assessment(
     ) = segment_fruit_otsu(
         working_image
     )
+    combined_mask = combine_otsu_masks_constrained(
+        gray_mask,
+        saturation_mask,
+        expansion_kernel_size = 9
+    )
 
     print("\nOtsu Segmentation")
     print("------------------------------")
@@ -180,7 +187,7 @@ def run_fruit_assessment(
 
     opened_mask, refined_mask = (
         refine_fruit_mask(
-            saturation_mask,
+            combined_mask,
             opening_kernel_size=3,
             closing_kernel_size=5
         )
@@ -191,7 +198,46 @@ def run_fruit_assessment(
     # TECHNIQUE 6: WATERSHED
     # ========================================================
 
-    # Optional - implement later for touching fruits.
+    use_watershed = False
+
+    if use_watershed:
+
+        (
+            watershed_markers,
+            separated_mask,
+            distance_transform,
+            sure_foreground,
+            fruit_labels,
+        ) = apply_watershed_segmentation(
+            working_image,
+            refined_mask,
+            foreground_ratio=0.4
+        )
+
+        measurement_mask = separated_mask
+
+        print("\nWatershed Segmentation")
+        print("------------------------------")
+        print("Watershed applied.")
+        print(
+            f"Number of detected fruit regions : "
+            f"{len(fruit_labels)}"
+        )
+
+    else:
+
+        watershed_markers = None
+        separated_mask = None
+        distance_transform = None
+        sure_foreground = None
+        fruit_labels = None
+        measurement_mask = refined_mask
+
+        print("\nWatershed Segmentation")
+        print("------------------------------")
+        print(
+            "Skipped - Watershed is disabled."
+        )
 
 
     # ========================================================
@@ -203,7 +249,7 @@ def run_fruit_assessment(
         fruit_contour,
         fruit_area_pixels
     ) = extract_main_fruit(
-        refined_mask
+        measurement_mask
     )
 
     print("\nFruit Measurement")
@@ -240,7 +286,7 @@ def run_fruit_assessment(
 
 
     # ========================================================
-    # RETURN RESULTS FOR OTHER MODULES
+    # RETURN RESULTS
     # ========================================================
 
     return {
@@ -252,6 +298,15 @@ def run_fruit_assessment(
 
     "saturation_image": saturation_image,
     "saturation_mask": saturation_mask,
+
+    "combined_mask": combined_mask,
+
+    "watershed_markers": watershed_markers,
+    "separated_mask": separated_mask,
+    "distance_transform": distance_transform,
+    "sure_foreground": sure_foreground,
+    "fruit_labels": fruit_labels,
+
 
     "opened_mask": opened_mask,
     "refined_mask": refined_mask,
@@ -273,7 +328,7 @@ def run_fruit_assessment(
 if __name__ == "__main__":
 
     results = run_fruit_assessment(
-        image_path="a_f326.png",
+        image_path="calibration_segmentation/test_images/tilt_apple.png",
 
         # Kaggle image:
         calibration_mode=False

@@ -4,23 +4,23 @@ import numpy as np
 
 def extract_main_fruit(
     refined_mask,
-    stem_removal_kernel_size=5
+    cleanup_kernel_size=5
 ):
     """
     Extract the main fruit body from the refined binary mask
     for projected area measurement.
 
-    A small morphological opening is applied before contour
-    extraction to remove thin protrusions such as the fruit
-    stem without changing the Technique 5 refined mask.
+    A morphological opening is applied before contour
+    extraction to remove thin connected structures such as
+    stems, narrow shadow connections, and small protrusions.
 
     Parameters:
         refined_mask:
             Binary mask after morphological refinement.
 
-        stem_removal_kernel_size:
-            Kernel size used to remove thin connected
-            structures such as the stem.
+        cleanup_kernel_size:
+            Kernel size used for measurement-specific
+            foreground cleanup.
 
     Returns:
         fruit_mask:
@@ -35,38 +35,53 @@ def extract_main_fruit(
     """
 
     # --------------------------------------------------------
-    # Validate kernel size
+    # Validate input
     # --------------------------------------------------------
 
+    if refined_mask is None:
+        raise ValueError(
+            "Refined mask cannot be None."
+        )
+
     if (
-        stem_removal_kernel_size <= 0
-        or stem_removal_kernel_size % 2 == 0
+        cleanup_kernel_size <= 0
+        or cleanup_kernel_size % 2 == 0
     ):
         raise ValueError(
-            "stem_removal_kernel_size must be "
+            "cleanup_kernel_size must be "
             "a positive odd integer."
         )
 
     # --------------------------------------------------------
-    # Create elliptical kernel
+    # Ensure proper binary mask
     # --------------------------------------------------------
 
-    stem_kernel = cv2.getStructuringElement(
+    binary_mask = np.where(
+        refined_mask > 0,
+        255,
+        0
+    ).astype(np.uint8)
+
+    # --------------------------------------------------------
+    # Create elliptical cleanup kernel
+    # --------------------------------------------------------
+
+    cleanup_kernel = cv2.getStructuringElement(
         cv2.MORPH_ELLIPSE,
         (
-            stem_removal_kernel_size,
-            stem_removal_kernel_size
+            cleanup_kernel_size,
+            cleanup_kernel_size
         )
     )
 
     # --------------------------------------------------------
-    # Remove thin protrusions such as the stem
+    # Remove narrow connected structures
     # --------------------------------------------------------
 
     measurement_mask = cv2.morphologyEx(
-        refined_mask,
+        binary_mask,
         cv2.MORPH_OPEN,
-        stem_kernel
+        cleanup_kernel
     )
 
     # --------------------------------------------------------
@@ -85,7 +100,7 @@ def extract_main_fruit(
         )
 
     # --------------------------------------------------------
-    # Select the largest foreground object
+    # Select largest foreground object
     # --------------------------------------------------------
 
     fruit_contour = max(
@@ -93,12 +108,17 @@ def extract_main_fruit(
         key=cv2.contourArea
     )
 
+    if cv2.contourArea(fruit_contour) <= 0:
+        raise ValueError(
+            "Detected fruit contour has zero area."
+        )
+
     # --------------------------------------------------------
-    # Create final solid fruit-body mask
+    # Create final solid fruit mask
     # --------------------------------------------------------
 
     fruit_mask = np.zeros_like(
-        refined_mask
+        binary_mask
     )
 
     cv2.drawContours(
@@ -110,7 +130,7 @@ def extract_main_fruit(
     )
 
     # --------------------------------------------------------
-    # Calculate projected area in pixels
+    # Calculate projected fruit area
     # --------------------------------------------------------
 
     fruit_area_pixels = cv2.countNonZero(

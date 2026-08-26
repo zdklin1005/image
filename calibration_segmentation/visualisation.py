@@ -30,6 +30,39 @@ def create_contour_image(image, fruit_contour):
 
     return contour_image
 
+def create_watershed_visualisation(
+    image,
+    watershed_markers
+):
+    """
+    Draw Watershed boundaries on a copy of the colour image.
+
+    Watershed boundaries are represented by marker value -1.
+    """
+
+    if image is None:
+        raise ValueError(
+            "Input image cannot be None."
+        )
+
+    if watershed_markers is None:
+        raise ValueError(
+            "Watershed markers cannot be None."
+        )
+
+    if image.shape[:2] != watershed_markers.shape[:2]:
+        raise ValueError(
+            "Image and Watershed marker dimensions must match."
+        )
+
+    watershed_image = image.copy()
+
+    # Mark Watershed boundaries in red
+    watershed_image[
+        watershed_markers == -1
+    ] = [0, 0, 255]
+
+    return watershed_image
 
 def display_results(results):
     """
@@ -60,6 +93,7 @@ def display_results(results):
         working_image,
         fruit_contour
     )
+
 
     cv2.namedWindow(
         "Working Image",
@@ -136,6 +170,10 @@ def save_results(
         "gray_mask"
     ]
 
+    combined_mask = results[
+        "combined_mask"
+    ]
+
     saturation_mask = results[
         "saturation_mask"
     ]
@@ -157,6 +195,7 @@ def save_results(
         fruit_contour
     )
 
+
     cv2.imwrite(
         f"{output_dir}/working_image.jpg",
         working_image
@@ -165,6 +204,11 @@ def save_results(
     cv2.imwrite(
         f"{output_dir}/otsu_gray_mask.png",
         gray_mask
+    )
+
+    cv2.imwrite(
+        f"{output_dir}/combined_otsu_mask.png",
+        combined_mask
     )
 
     cv2.imwrite(
