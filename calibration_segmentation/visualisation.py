@@ -145,8 +145,8 @@ def display_results(results):
         contour_image
     )
 
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    #cv2.waitKey(0)
+    #cv2.destroyAllWindows()
 
 
 def save_results(
@@ -190,46 +190,33 @@ def save_results(
         "fruit_contour"
     ]
 
+    detection_image = results.get(
+        "detection_image"
+    )
+
     contour_image = create_contour_image(
         working_image,
         fruit_contour
     )
 
 
-    cv2.imwrite(
-        f"{output_dir}/working_image.jpg",
-        working_image
-    )
+    output_images = {
+        "working_image.jpg": working_image,
+        "otsu_gray_mask.png": gray_mask,
+        "combined_otsu_mask.png": combined_mask,
+        "otsu_saturation_mask.png": saturation_mask,
+        "refined_mask.png": refined_mask,
+        "final_fruit_mask.png": fruit_mask,
+        "fruit_contour.jpg": contour_image,
+    }
 
-    cv2.imwrite(
-        f"{output_dir}/otsu_gray_mask.png",
-        gray_mask
-    )
+    if detection_image is not None:
+        output_images["fruit_detection.jpg"] = detection_image
 
-    cv2.imwrite(
-        f"{output_dir}/combined_otsu_mask.png",
-        combined_mask
-    )
-
-    cv2.imwrite(
-        f"{output_dir}/otsu_saturation_mask.png",
-        saturation_mask
-    )
-
-    cv2.imwrite(
-        f"{output_dir}/refined_mask.png",
-        refined_mask
-    )
-
-    cv2.imwrite(
-        f"{output_dir}/final_fruit_mask.png",
-        fruit_mask
-    )
-
-    cv2.imwrite(
-        f"{output_dir}/fruit_contour.jpg",
-        contour_image
-    )
+    for filename, image in output_images.items():
+        output_path = os.path.join(output_dir, filename)
+        if not cv2.imwrite(output_path, image):
+            raise IOError(f"Failed to save result image: {output_path}")
 
     print(
         f"\nResults saved to: {output_dir}"

@@ -35,6 +35,12 @@ def segment_fruit_otsu(image):
             Threshold automatically selected by saturation Otsu.
     """
 
+    if image is None:
+        raise ValueError("Input image cannot be None.")
+
+    if image.ndim != 3 or image.shape[2] != 3:
+        raise ValueError("Input image must be a three-channel BGR image.")
+
     # ============================================================
     # Method 1: Grayscale Otsu
     # ============================================================
@@ -198,6 +204,9 @@ def refine_fruit_mask(
         refined_mask:
             Final result after opening followed by closing.
     """
+
+    if mask is None:
+        raise ValueError("Input mask cannot be None.")
 
     # Validate opening kernel
     if (
