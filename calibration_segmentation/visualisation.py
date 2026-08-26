@@ -111,8 +111,8 @@ def display_results(results):
         contour_image
     )
 
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    #cv2.waitKey(0)
+    #cv2.destroyAllWindows()
 
 
 def save_results(

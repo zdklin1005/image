@@ -1,5 +1,6 @@
 import cv2
 import os
+from tkinter import Tk, filedialog
 
 from preprocessing import (
     preprocess_fruit_image
@@ -22,6 +23,11 @@ from calibration_segmentation.measurement import (
 from calibration_segmentation.visualisation import (
     display_results,
     save_results
+)
+
+from fruit_ripeness_object_detection.detection import (
+    detect_fruit_ripeness,
+    draw_detections
 )
 
 def run_fruit_assessment(
@@ -238,6 +244,57 @@ def run_fruit_assessment(
             "Not available"
         )
 
+    # ========================================================
+    # MEMBER 3: FRUIT DETECTION AND RIPENESS CLASSIFICATION
+    # ========================================================
+
+    detections = detect_fruit_ripeness(
+        working_image,
+        confidence_threshold=0.40
+    )
+
+    detection_image = draw_detections(
+        working_image,
+        detections
+    )
+
+    print("\nFruit Detection and Ripeness")
+    print("------------------------------")
+
+    if len(detections) == 0:
+
+        print("No fruit detected.")
+
+    else:
+
+        for index, detection in enumerate(
+            detections,
+            start=1
+        ):
+
+            print(
+                f"Detection {index}"
+            )
+
+            print(
+                f"Fruit      : "
+                f"{detection['fruit_type']}"
+            )
+
+            print(
+                f"Ripeness   : "
+                f"{detection['ripeness']}"
+            )
+
+            print(
+                f"Confidence : "
+                f"{detection['confidence'] * 100:.2f}%"
+            )
+
+            print(
+                f"Bounding box : "
+                f"{detection['bounding_box']}\n"
+            )
 
     # ========================================================
     # RETURN RESULTS FOR OTHER MODULES
@@ -266,19 +323,63 @@ def run_fruit_assessment(
     "pixels_per_cm_y": pixels_per_cm_y,
 
     "blur_score": blur_score,
-    "is_blurry": is_blurry
+    "is_blurry": is_blurry,
+
+    "detections": detections,
+    "detection_image": detection_image
 }
 
 
 if __name__ == "__main__":
 
+    # Select Image
+    root = Tk()
+    root.withdraw()
+
+    image_path = filedialog.askopenfilename(
+        title="Select Fruit Image",
+        filetypes=[
+            ("Image Files", "*.jpg *.jpeg *.png *.bmp"),
+            ("All Files", "*.*")
+        ]
+    )
+
+    # User closes the file picker without selecting an image
+    if not image_path:
+        print("No image selected.")
+        exit()
+
+    print(f"\nSelected image: {image_path}")
+
+
+    # Run complete pipeline
     results = run_fruit_assessment(
-        image_path="a_f326.png",
+        image_path=image_path,
 
         # Kaggle image:
         calibration_mode=False
     )
 
     display_results(results)
-
     save_results(results)
+
+    print("\nPress any key on an image window to continue to Fruit Ripeness Object Detection.")
+
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+    # Fruit ripeness detection
+    cv2.namedWindow(
+            "Fruit Detection and Ripeness",
+            cv2.WINDOW_NORMAL
+        )
+    
+    cv2.imshow(
+        "Fruit Detection and Ripeness",
+        results["detection_image"]
+    )
+
+    print("\nPress any key on an image window to exit the program.")
+
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
