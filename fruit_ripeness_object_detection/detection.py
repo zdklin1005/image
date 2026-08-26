@@ -140,8 +140,8 @@ def draw_detections(
             output_image,
             (x1, y1),
             (x2, y2),
-            (0, 255, 0),
-            2
+            (0, 0, 255),
+            3
         )
 
         # Create label
@@ -157,9 +157,9 @@ def draw_detections(
             label,
             (x1, max(y1 - 10, 20)),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (0, 255, 0),
-            2
+            0.8,
+            (0, 0, 255),
+            3
         )
 
     return output_image
