@@ -1,5 +1,4 @@
 import cv2
-import os
 from tkinter import Tk, filedialog
 
 from preprocessing import (
@@ -12,7 +11,9 @@ from calibration_segmentation.calibration import (
 
 from calibration_segmentation.segmentation import (
     segment_fruit_otsu,
-    refine_fruit_mask
+    combine_otsu_masks_constrained,
+    refine_fruit_mask,
+    apply_watershed_segmentation
 )
 
 from calibration_segmentation.measurement import (
@@ -30,12 +31,34 @@ from fruit_ripeness_object_detection.detection import (
     draw_detections
 )
 
+from fruit_ripeness_object_detection.blemish import (
+    detect_fruit_blemish
+)
+
+def resize_for_display(image, max_width=1200, max_height=850):
+    height, width = image.shape[:2]
+
+    scale = min(
+        max_width / width,
+        max_height / height
+    )
+
+    new_width = int(width * scale)
+    new_height = int(height * scale)
+
+    return cv2.resize(
+        image,
+        (new_width, new_height),
+        interpolation=cv2.INTER_LINEAR
+    )
+
 def run_fruit_assessment(
     image_path,
     calibration_mode=False,
     reference_width_cm=None,
     reference_height_cm=None,
-    target_pixels_per_cm=20
+    target_pixels_per_cm=20,
+    use_watershed=False
 ):
     """
     Run the integrated fruit image-processing pipeline.
@@ -59,6 +82,10 @@ def run_fruit_assessment(
         "display_image"
     ]
 
+    classification_image = preprocessing_results[
+        "classification_image"
+    ]
+
     blur_score = preprocessing_results[
         "blur_score"
     ]
@@ -67,12 +94,92 @@ def run_fruit_assessment(
         "is_blurry"
     ]
 
+    mean_brightness = preprocessing_results[
+        "mean_brightness"
+    ]
+
+    contrast_score = preprocessing_results[
+        "contrast_score"
+    ]
+
+    dynamic_range = preprocessing_results[
+        "dynamic_range"
+    ]
+
+    dark_pixel_ratio = preprocessing_results[
+        "dark_pixel_ratio"
+    ]
+
+    bright_pixel_ratio = preprocessing_results[
+        "bright_pixel_ratio"
+    ]
+
+    resize_scale = preprocessing_results[
+        "resize_scale"
+    ]
+
+    resize_padding = preprocessing_results[
+        "resize_padding"
+    ]
+
+    output_size = preprocessing_results[
+        "output_size"
+    ]
+
     print("\nImage Preprocessing")
     print("------------------------------")
 
     print(
         f"Blur score : "
         f"{blur_score:.2f}"
+    )
+
+    print(
+        f"Mean brightness : "
+        f"{mean_brightness:.2f}"
+    )
+
+    print(
+        f"Contrast score  : "
+        f"{contrast_score:.2f}"
+    )
+
+    print(
+        f"Dynamic range   : "
+        f"{dynamic_range:.2f}"
+    )
+
+    print(
+        f"Dark pixels     : "
+        f"{dark_pixel_ratio:.2%}"
+    )
+
+    print(
+        f"Bright pixels   : "
+        f"{bright_pixel_ratio:.2%}"
+    )
+
+    print(
+        "Median filter   : Applied (5 x 5)"
+    )
+
+    print(
+        "Bilateral filter: Applied"
+    )
+
+    print(
+        f"Output size     : "
+        f"{output_size[0]} x {output_size[1]}"
+    )
+
+    print(
+        f"Resize scale    : "
+        f"{resize_scale:.4f}"
+    )
+
+    print(
+        "Resize padding  : "
+        f"{resize_padding}"
     )
 
     if is_blurry:
@@ -165,6 +272,11 @@ def run_fruit_assessment(
     ) = segment_fruit_otsu(
         working_image
     )
+    combined_mask = combine_otsu_masks_constrained(
+        gray_mask,
+        saturation_mask,
+        expansion_kernel_size = 9
+    )
 
     print("\nOtsu Segmentation")
     print("------------------------------")
@@ -186,7 +298,7 @@ def run_fruit_assessment(
 
     opened_mask, refined_mask = (
         refine_fruit_mask(
-            saturation_mask,
+            combined_mask,
             opening_kernel_size=3,
             closing_kernel_size=5
         )
@@ -197,7 +309,44 @@ def run_fruit_assessment(
     # TECHNIQUE 6: WATERSHED
     # ========================================================
 
-    # Optional - implement later for touching fruits.
+    if use_watershed:
+
+        (
+            watershed_markers,
+            separated_mask,
+            distance_transform,
+            sure_foreground,
+            fruit_labels,
+        ) = apply_watershed_segmentation(
+            working_image,
+            refined_mask,
+            foreground_ratio=0.4
+        )
+
+        measurement_mask = separated_mask
+
+        print("\nWatershed Segmentation")
+        print("------------------------------")
+        print("Watershed applied.")
+        print(
+            f"Number of detected fruit regions : "
+            f"{len(fruit_labels)}"
+        )
+
+    else:
+
+        watershed_markers = None
+        separated_mask = None
+        distance_transform = None
+        sure_foreground = None
+        fruit_labels = None
+        measurement_mask = refined_mask
+
+        print("\nWatershed Segmentation")
+        print("------------------------------")
+        print(
+            "Skipped - Watershed is disabled."
+        )
 
 
     # ========================================================
@@ -209,7 +358,7 @@ def run_fruit_assessment(
         fruit_contour,
         fruit_area_pixels
     ) = extract_main_fruit(
-        refined_mask
+        measurement_mask
     )
 
     print("\nFruit Measurement")
@@ -249,12 +398,12 @@ def run_fruit_assessment(
     # ========================================================
 
     detections = detect_fruit_ripeness(
-        working_image,
+        classification_image,
         confidence_threshold=0.40
     )
 
     detection_image = draw_detections(
-        working_image,
+        classification_image,
         detections
     )
 
@@ -262,11 +411,9 @@ def run_fruit_assessment(
     print("------------------------------")
 
     if len(detections) == 0:
-
         print("No fruit detected.")
 
     else:
-
         for index, detection in enumerate(
             detections,
             start=1
@@ -297,11 +444,58 @@ def run_fruit_assessment(
             )
 
     # ========================================================
-    # RETURN RESULTS FOR OTHER MODULES
+    # MEMBER 3: BLEMISH ANALYSIS
+    # ========================================================
+    blemish_results = None
+
+    if len(detections) == 0:
+
+        print("\nBlemish Analysis")
+        print("------------------------------")
+        print("Skipped - no detected fruit class available.")
+
+    else:
+        # Use the highest-confidence detection
+        primary_detection = max(
+            detections,
+            key=lambda detection: detection["confidence"]
+        )
+
+        primary_fruit_type = primary_detection[
+            "fruit_type"
+        ]
+
+        blemish_results = detect_fruit_blemish(
+            image=working_image,
+            fruit_mask=fruit_mask,
+            fruit_type=primary_fruit_type,
+            opening_kernel_size=3,
+            closing_kernel_size=5,
+            min_component_area=60
+        )
+
+        print("\nBlemish Analysis")
+        print("------------------------------")
+        print(
+            f"Fruit type used    : "
+            f"{blemish_results['fruit_type_used']}"
+        )
+        print(
+            f"Blemish area       : "
+            f"{blemish_results['blemish_area_pixels']} pixels^2"
+        )
+        print(
+            f"Blemish Percentage : "
+            f"{blemish_results['blemish_percentage']:.2f}%"
+        )
+
+    # ========================================================
+    # RETURN RESULTS
     # ========================================================
 
     return {
     "analysis_image": analysis_image,
+    "classification_image": classification_image,
     "working_image": working_image,
 
     "gray_image": gray_image,
@@ -309,6 +503,15 @@ def run_fruit_assessment(
 
     "saturation_image": saturation_image,
     "saturation_mask": saturation_mask,
+
+    "combined_mask": combined_mask,
+
+    "watershed_markers": watershed_markers,
+    "separated_mask": separated_mask,
+    "distance_transform": distance_transform,
+    "sure_foreground": sure_foreground,
+    "fruit_labels": fruit_labels,
+
 
     "opened_mask": opened_mask,
     "refined_mask": refined_mask,
@@ -325,8 +528,38 @@ def run_fruit_assessment(
     "blur_score": blur_score,
     "is_blurry": is_blurry,
 
+    "mean_brightness": mean_brightness,
+    "contrast_score": contrast_score,
+    "dynamic_range": dynamic_range,
+    "dark_pixel_ratio": dark_pixel_ratio,
+    "bright_pixel_ratio": bright_pixel_ratio,
+
+    "resize_scale": resize_scale,
+    "resize_padding": resize_padding,
+    "output_size": output_size,
+
     "detections": detections,
-    "detection_image": detection_image
+    "detection_image": detection_image,
+
+    "blemish_mask": (
+        blemish_results["blemish_mask"]
+        if blemish_results is not None else None
+    ),
+
+    "blemish_overlay": (
+        blemish_results["blemish_overlay"]
+        if blemish_results is not None else None
+    ),
+
+    "blemish_area_pixels": (
+        blemish_results["blemish_area_pixels"]
+        if blemish_results is not None else 0
+    ),
+
+    "blemish_percentage": (
+        blemish_results["blemish_percentage"]
+        if blemish_results is not None else 0.0
+    ),
 }
 
 
@@ -336,18 +569,21 @@ if __name__ == "__main__":
     root = Tk()
     root.withdraw()
 
-    image_path = filedialog.askopenfilename(
-        title="Select Fruit Image",
-        filetypes=[
-            ("Image Files", "*.jpg *.jpeg *.png *.bmp"),
-            ("All Files", "*.*")
-        ]
-    )
+    try:
+        image_path = filedialog.askopenfilename(
+            title="Select Fruit Image",
+            filetypes=[
+                ("Image Files", "*.jpg *.jpeg *.png *.bmp"),
+                ("All Files", "*.*")
+            ]
+        )
+    finally:
+        root.destroy()
 
     # User closes the file picker without selecting an image
     if not image_path:
         print("No image selected.")
-        exit()
+        raise SystemExit(0)
 
     print(f"\nSelected image: {image_path}")
 
@@ -369,17 +605,61 @@ if __name__ == "__main__":
     cv2.destroyAllWindows()
 
     # Fruit ripeness detection
-    cv2.namedWindow(
-            "Fruit Detection and Ripeness",
-            cv2.WINDOW_NORMAL
-        )
-    
-    cv2.imshow(
-        "Fruit Detection and Ripeness",
+    display_detection_image = resize_for_display(
         results["detection_image"]
     )
 
-    print("\nPress any key on an image window to exit the program.")
+    cv2.namedWindow(
+        "Fruit Detection and Ripeness",
+        cv2.WINDOW_NORMAL
+    )
 
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    height, width = display_detection_image.shape[:2]
+
+    cv2.resizeWindow(
+        "Fruit Detection and Ripeness",
+        width,
+        height
+    )
+
+    cv2.imshow(
+        "Fruit Detection and Ripeness",
+        display_detection_image
+    )
+
+    # Blemish calculation
+    if results["blemish_mask"] is not None:
+        cv2.namedWindow(
+            "Blemish Detection",
+            cv2.WINDOW_NORMAL
+        )
+
+        cv2.imshow(
+            "Blemish Detection",
+            results["blemish_mask"]
+        )
+
+        cv2.namedWindow(
+            "Blemish Overlay",
+            cv2.WINDOW_NORMAL
+        )
+
+        cv2.imshow(
+            "Blemish Overlay",
+            results["blemish_overlay"]
+        )
+
+        print(
+            f"\nBlemish Percentage: "
+            f"{results['blemish_percentage']:.2f}%"
+        )
+
+        print("\nPress any key on an image window to exit the program.")
+
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+        
+#    print("\nPress any key on an image window to exit the program.")
+#
+#    cv2.waitKey(0)
+#    cv2.destroyAllWindows()

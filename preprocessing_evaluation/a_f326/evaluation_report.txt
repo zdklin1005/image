@@ -1,0 +1,72 @@
+FRUIT IMAGE PREPROCESSING EVALUATION
+==========================================
+
+Input image: a_f326.png
+Output size: 640 x 640 pixels
+Processing time: 0.048073 seconds
+Blur score: 385.7546
+Blur suitability: Acceptable
+
+Input mean brightness: 209.2343
+Input contrast score: 48.5958
+Input dynamic range: 127.0000
+Dark pixel ratio: 0.002211
+Bright pixel ratio: 0.544715
+Median filter: Applied (fixed 5 x 5)
+Bilateral filter: Applied (fixed parameters)
+
+VALIDATION CHECKS
+------------------------------------------
+PASS - original: shape and data type passed
+PASS - median: shape and data type passed
+PASS - bilateral: shape and data type passed
+PASS - clahe_analysis: shape and data type passed
+PASS - sharpened_display: shape and data type passed
+PASS - blur_score: float check passed
+PASS - is_blurry: Boolean check passed
+PASS - input exposure and contrast metrics: float checks passed
+
+DESCRIPTIVE QUALITY INDICATORS
+------------------------------------------
+
+Stage: original
+  Mean brightness: 200.0783
+  Contrast standard deviation: 54.5334
+  Entropy: 5.5193
+  Laplacian variance: 3269.5446
+  Edge density: 0.020117
+
+Stage: median
+  Mean brightness: 200.5081
+  Contrast standard deviation: 54.1872
+  Entropy: 5.4743
+  Laplacian variance: 58.5163
+  Edge density: 0.005951
+
+Stage: bilateral
+  Mean brightness: 200.5119
+  Contrast standard deviation: 54.1811
+  Entropy: 5.4888
+  Laplacian variance: 64.6857
+  Edge density: 0.006357
+
+Stage: clahe_analysis
+  Mean brightness: 195.3507
+  Contrast standard deviation: 57.6409
+  Entropy: 5.5388
+  Laplacian variance: 83.7077
+  Edge density: 0.007981
+
+Stage: sharpened_display
+  Mean brightness: 195.1143
+  Contrast standard deviation: 57.8679
+  Entropy: 5.5391
+  Laplacian variance: 181.1160
+  Edge density: 0.008526
+
+SUMMARY CHANGES
+------------------------------------------
+CLAHE contrast change from original: +3.1076
+Display sharpness change from analysis image: +97.4084
+
+These values are descriptive indicators. Visual inspection and, when available, PSNR against a matching clean reference should also be used when discussing preprocessing quality.

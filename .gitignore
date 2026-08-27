@@ -8,3 +8,6 @@ __pycache__/
 # Generated calibration/segmentation outputs
 calibration_segmentation/outputs/*
 !calibration_segmentation/outputs/.gitkeep
+
+# Calibration/segmentation test images
+calibration_segmentation/test_images/*
