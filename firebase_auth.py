@@ -1,15 +1,17 @@
 """
-firebase_auth.py - Firebase Authentication for the app.
+firebase_auth.py - Firebase Authentication (identity only).
 
-Two Firebase pieces are used for different jobs:
+Roles/authorization are NOT handled here anymore -- they live in
+db.py's user_roles table, which updates instantly without needing a
+re-login. This module only answers "who is this person" via Firebase:
 
 - Web API Key + REST API (accounts:signInWithPassword): the Admin SDK
   cannot verify a plaintext password -- only Firebase's REST endpoint
   can. This is how the actual login check happens.
 
 - Service account + Admin SDK: used for privileged actions that don't
-  involve checking a password, like changing a password once the user
-  is already authenticated.
+  involve checking a password -- changing a password once logged in,
+  and creating/listing/deleting accounts from the Manage Users page.
 
 Credentials are read from Streamlit's secrets file (.streamlit/secrets.toml),
 which must never be committed to git. See secrets.toml.example for the
@@ -52,6 +54,11 @@ def _sign_in_with_email_password(email: str, password: str):
 
 
 def require_login():
+    """
+    Shows a login form and halts the script (st.stop()) until the user
+    is authenticated. Does NOT render any sidebar/navigation -- call
+    this before building your page list so nothing is visible pre-login.
+    """
     if "logged_in" not in st.session_state:
         st.session_state.logged_in = False
         st.session_state.user_email = None
@@ -77,7 +84,7 @@ def require_login():
         else:
             st.error("Invalid email or password")
 
-    st.stop()  # prevents the rest of the page from rendering until logged in
+    st.stop()  # prevents anything else (including nav) from rendering pre-login
 
 
 def logout_button():
@@ -101,7 +108,6 @@ def change_password(current_password: str, new_password: str) -> tuple[bool, str
     if not email or not uid:
         return False, "You must be logged in to change your password."
 
-    # Re-verify the current password before allowing a change
     if _sign_in_with_email_password(email, current_password) is None:
         return False, "Current password is incorrect."
 
@@ -114,3 +120,32 @@ def change_password(current_password: str, new_password: str) -> tuple[bool, str
         return False, f"Failed to update password: {e}"
 
     return True, "Password updated."
+
+
+# ---------------------------------------------------------
+# Admin-only account management (used by app_pages/manage_users.py)
+# Identity only -- roles are read/written via db.get_role / db.set_role
+# ---------------------------------------------------------
+
+def list_firebase_users() -> list[dict]:
+    """Returns [{uid, email}] for every Firebase account."""
+    return [
+        {"uid": u.uid, "email": u.email}
+        for u in firebase_admin_auth.list_users().iterate_all()
+    ]
+
+
+def create_user(email: str, password: str) -> tuple[bool, str]:
+    try:
+        firebase_admin_auth.create_user(email=email, password=password)
+    except Exception as e:
+        return False, f"Failed to create user: {e}"
+    return True, f"Created account for {email}."
+
+
+def delete_user_account(uid: str) -> tuple[bool, str]:
+    try:
+        firebase_admin_auth.delete_user(uid)
+    except Exception as e:
+        return False, f"Failed to delete user: {e}"
+    return True, "User deleted."
