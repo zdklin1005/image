@@ -490,26 +490,83 @@ def save_results(
         roi_results,
         start=1
     ):
+
+        # ----------------------------------------------------
+        # Save combined ROI processing panel
+        # ----------------------------------------------------
+
         roi_panel = create_roi_visualisation_panel(
             roi_result,
             index
         )
 
-        roi_output_path = os.path.join(
+        roi_panel_path = os.path.join(
             output_dir,
             f"roi_{index}_panel.jpg"
         )
 
         if not cv2.imwrite(
-            roi_output_path,
+            roi_panel_path,
             roi_panel
         ):
             raise IOError(
                 f"Failed to save ROI panel: "
-                f"{roi_output_path}"
+                f"{roi_panel_path}"
             )
 
-    print(
-        f"\nResults saved to: {output_dir}"
-    )
 
+        # ----------------------------------------------------
+        # Save original cropped ROI
+        # ----------------------------------------------------
+
+        roi_image_path = os.path.join(
+            output_dir,
+            f"roi_{index}_original.jpg"
+        )
+
+        if not cv2.imwrite(
+            roi_image_path,
+            roi_result["roi_image"]
+        ):
+            raise IOError(
+                f"Failed to save ROI image: "
+                f"{roi_image_path}"
+            )
+
+
+        # ----------------------------------------------------
+        # Save final ROI fruit mask
+        # ----------------------------------------------------
+
+        roi_mask_path = os.path.join(
+            output_dir,
+            f"roi_{index}_mask.png"
+        )
+
+        if not cv2.imwrite(
+            roi_mask_path,
+            roi_result["fruit_mask"]
+        ):
+            raise IOError(
+                f"Failed to save ROI mask: "
+                f"{roi_mask_path}"
+            )
+
+
+        # ----------------------------------------------------
+        # Save fruit-only colour result
+        # ----------------------------------------------------
+
+        roi_fruit_only_path = os.path.join(
+            output_dir,
+            f"roi_{index}_fruit_only.jpg"
+        )
+
+        if not cv2.imwrite(
+            roi_fruit_only_path,
+            roi_result["fruit_only_colour"]
+        ):
+            raise IOError(
+                f"Failed to save ROI fruit-only image: "
+                f"{roi_fruit_only_path}"
+            )
