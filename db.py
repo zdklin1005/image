@@ -7,6 +7,7 @@ This file handles run history and role assignment.
 
 import sqlite3
 import datetime
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -34,11 +35,18 @@ def init_db():
         )
     """)
 
-    # Migrate DBs created before created_by existed
     c.execute("PRAGMA table_info(runs)")
     existing_cols = [row[1] for row in c.fetchall()]
-    if "created_by" not in existing_cols:
-        c.execute("ALTER TABLE runs ADD COLUMN created_by TEXT")
+
+    migrations = [
+        ("created_by", "TEXT"),
+        ("is_blurry", "INTEGER DEFAULT 0"),
+        ("calibrated", "INTEGER DEFAULT 0"),
+        ("detections_json", "TEXT DEFAULT '[]'"),
+    ]
+    for col_name, col_type in migrations:
+        if col_name not in existing_cols:
+            c.execute(f"ALTER TABLE runs ADD COLUMN {col_name} {col_type}")
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS user_roles (
@@ -71,13 +79,23 @@ def set_role(email: str, role: str) -> None:
     conn.close()
 
 
-def add_run(created_by: str, fruit_count: int, avg_confidence: float, processing_time_ms: float) -> None:
+def add_run(
+    created_by: str,
+    fruit_count: int,
+    avg_confidence: float,
+    processing_time_ms: float,
+    is_blurry: bool = False,
+    calibrated: bool = False,
+    detections: list = None,
+) -> None:
     conn = get_connection()
     c = conn.cursor()
     c.execute(
         """
-        INSERT INTO runs (timestamp, created_by, fruit_count, avg_confidence, processing_time_ms)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO runs
+            (timestamp, created_by, fruit_count, avg_confidence, processing_time_ms,
+             is_blurry, calibrated, detections_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             datetime.datetime.now().isoformat(timespec="seconds"),
@@ -85,6 +103,9 @@ def add_run(created_by: str, fruit_count: int, avg_confidence: float, processing
             fruit_count,
             avg_confidence,
             processing_time_ms,
+            int(bool(is_blurry)),
+            int(bool(calibrated)),
+            json.dumps(detections or []),
         ),
     )
     conn.commit()
@@ -92,10 +113,6 @@ def add_run(created_by: str, fruit_count: int, avg_confidence: float, processing
 
 
 def get_run_history(created_by: str = None) -> pd.DataFrame:
-    """
-    Pass created_by to scope to one user (clients).
-    Pass nothing to get every run (admins).
-    """
     conn = get_connection()
     if created_by:
         df = pd.read_sql_query(

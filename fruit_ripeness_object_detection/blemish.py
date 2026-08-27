@@ -199,10 +199,14 @@ def create_blemish_overlay(image, blemish_mask):
 
     output = image.copy()
 
+    mask_indices = blemish_mask > 0
+
+    # No blemish pixels found — nothing to overlay, return image as-is
+    if not np.any(mask_indices):
+        return output
+
     red_layer = np.zeros_like(output)
     red_layer[:] = (0, 0, 255)
-
-    mask_indices = blemish_mask > 0
 
     output[mask_indices] = cv2.addWeighted(
         output[mask_indices],
