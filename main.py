@@ -5,6 +5,10 @@ from preprocessing import (
     preprocess_fruit_image
 )
 
+from calibration_segmentation.roi_processing import (
+    process_fruit_roi
+)
+
 from calibration_segmentation.calibration import (
     calibrate_image
 )
@@ -16,6 +20,10 @@ from calibration_segmentation.segmentation import (
     apply_watershed_segmentation
 )
 
+from calibration_segmentation.feature_extraction import (
+    extract_colour_features
+)
+
 from calibration_segmentation.measurement import (
     extract_main_fruit,
     calculate_projected_area_cm2
@@ -23,6 +31,7 @@ from calibration_segmentation.measurement import (
 
 from calibration_segmentation.visualisation import (
     display_results,
+    display_roi_results,
     save_results
 )
 
@@ -272,11 +281,6 @@ def run_fruit_assessment(
     ) = segment_fruit_otsu(
         working_image
     )
-    combined_mask = combine_otsu_masks_constrained(
-        gray_mask,
-        saturation_mask,
-        expansion_kernel_size = 9
-    )
 
     print("\nOtsu Segmentation")
     print("------------------------------")
@@ -293,15 +297,70 @@ def run_fruit_assessment(
 
 
     # ========================================================
-    # TECHNIQUE 5: MORPHOLOGICAL REFINEMENT
+    # TECHNIQUE 5: SEPARATE MORPHOLOGICAL REFINEMENT
     # ========================================================
 
-    opened_mask, refined_mask = (
-        refine_fruit_mask(
-            combined_mask,
-            opening_kernel_size=3,
-            closing_kernel_size=5
-        )
+    # Refine grayscale Otsu mask separately
+    (
+        gray_opened_mask,
+        gray_refined_mask
+    ) = refine_fruit_mask(
+        gray_mask,
+        opening_kernel_size=3,
+        closing_kernel_size=5
+    )
+
+
+    # Refine saturation Otsu mask separately
+    (
+        saturation_opened_mask,
+        saturation_refined_mask
+    ) = refine_fruit_mask(
+        saturation_mask,
+        opening_kernel_size=3,
+        closing_kernel_size=5
+    )
+
+
+    # ========================================================
+    # TECHNIQUE 5.1: COMBINE REFINED OTSU MASKS
+    # ========================================================
+
+    combined_mask = combine_otsu_masks_constrained(
+        gray_refined_mask,
+        saturation_refined_mask,
+        expansion_kernel_size=9
+    )
+
+
+    # Final light refinement after combination
+    (
+        opened_mask,
+        refined_mask
+    ) = refine_fruit_mask(
+        combined_mask,
+        opening_kernel_size=3,
+        closing_kernel_size=5
+    )
+
+    print("\nMorphological Refinement")
+    print("------------------------------")
+
+    print(
+        "Grayscale mask refined separately."
+    )
+
+    print(
+        "Saturation mask refined separately."
+    )
+
+    print(
+        "Refined masks combined using "
+        "constrained mask combination."
+    )
+
+    print(
+        "Final combined mask refined."
     )
 
 
@@ -360,6 +419,53 @@ def run_fruit_assessment(
     ) = extract_main_fruit(
         measurement_mask
     )
+    # ========================================================
+    # TECHNIQUE 8: Colour preserve and feature extraction
+    # ========================================================
+
+    fruit_only_colour = cv2.bitwise_and(
+        working_image,
+        working_image,
+        mask=fruit_mask
+    )
+
+    colour_features = extract_colour_features(
+        working_image,
+        fruit_mask
+    )
+
+    print("\nFruit Colour Features")
+    print("------------------------------")
+
+    print(
+        f"Mean Red        : "
+        f"{colour_features['mean_red']:.2f}"
+    )
+
+    print(
+        f"Mean Green      : "
+        f"{colour_features['mean_green']:.2f}"
+    )
+
+    print(
+        f"Mean Blue       : "
+        f"{colour_features['mean_blue']:.2f}"
+    )
+
+    print(
+        f"Dominant Hue    : "
+        f"{colour_features['dominant_hue']}"
+    )
+
+    print(
+        f"Mean Saturation : "
+        f"{colour_features['mean_saturation']:.2f}"
+    )
+
+    print(
+        f"Mean Value      : "
+        f"{colour_features['mean_value']:.2f}"
+    )
 
     print("\nFruit Measurement")
     print("------------------------------")
@@ -406,6 +512,135 @@ def run_fruit_assessment(
         classification_image,
         detections
     )
+
+
+    # ========================================================
+    # MEMBER 2: ROI-BASED SEGMENTATION
+    # ========================================================
+
+    roi_results = []
+
+    print("\nROI Fruit Processing")
+    print("------------------------------")
+
+    if len(detections) == 0:
+
+        print(
+            "Skipped - no YOLO fruit detections available."
+        )
+
+    else:
+
+        for index, detection in enumerate(
+            detections,
+            start=1
+        ):
+
+            try:
+
+                roi_result = process_fruit_roi(
+                    working_image,
+                    detection["bounding_box"],
+                    use_watershed=False
+                )
+
+                # Attach YOLO information
+                roi_result["fruit_type"] = detection[
+                    "fruit_type"
+                ]
+
+                roi_result["ripeness"] = detection[
+                    "ripeness"
+                ]
+
+                roi_result["confidence"] = detection[
+                    "confidence"
+                ]
+
+                roi_results.append(
+                    roi_result
+                )
+
+                roi_colour_features = roi_result[
+                    "colour_features"
+                ]
+
+                print(
+                    f"\nFruit ROI {index}"
+                )
+
+                print(
+                    f"Fruit        : "
+                    f"{roi_result['fruit_type']}"
+                )
+
+                print(
+                    f"Watershed    : "
+                    f"{'Enabled' if roi_result['watershed_used'] else 'Disabled'}"
+                )
+
+                if roi_result["fruit_labels"] is not None:
+                    print(
+                        f"Regions      : "
+                        f"{len(roi_result['fruit_labels'])}"
+                )
+                    
+                print(
+                    f"Ripeness     : "
+                    f"{roi_result['ripeness']}"
+                )
+
+                print(
+                    f"Confidence   : "
+                    f"{roi_result['confidence'] * 100:.2f}%"
+                )
+
+                print(
+                    f"Bounding box : "
+                    f"{roi_result['bounding_box']}"
+                )
+
+                print(
+                    f"ROI area     : "
+                    f"{roi_result['fruit_area_pixels']} pixels^2"
+                )
+
+                print(
+                    f"Mean Red     : "
+                    f"{roi_colour_features['mean_red']:.2f}"
+                )
+
+                print(
+                    f"Mean Green   : "
+                    f"{roi_colour_features['mean_green']:.2f}"
+                )
+
+                print(
+                    f"Mean Blue    : "
+                    f"{roi_colour_features['mean_blue']:.2f}"
+                )
+
+                print(
+                    f"Dominant Hue : "
+                    f"{roi_colour_features['dominant_hue']}"
+                )
+
+                print(
+                    f"Mean Saturation : "
+                    f"{roi_colour_features['mean_saturation']:.2f}"
+                )
+
+                print(
+                    f"Mean Value      : "
+                    f"{roi_colour_features['mean_value']:.2f}"
+                )
+
+            except ValueError as error:
+
+                print(
+                    f"\nFruit ROI {index} skipped: "
+                    f"{error}"
+                )
 
     print("\nFruit Detection and Ripeness")
     print("------------------------------")
@@ -465,15 +700,32 @@ def run_fruit_assessment(
             "fruit_type"
         ]
 
-        blemish_results = detect_fruit_blemish(
-            image=working_image,
-            fruit_mask=fruit_mask,
-            fruit_type=primary_fruit_type,
-            opening_kernel_size=3,
-            closing_kernel_size=5,
-            min_component_area=60
-        )
+        try:
+            blemish_results = detect_fruit_blemish(
+                image=working_image,
+                fruit_mask=fruit_mask,
+                fruit_type=primary_fruit_type,
+                opening_kernel_size=3,
+                closing_kernel_size=5,
+                min_component_area=60
+            )
 
+        except (TypeError, ValueError, cv2.error) as error:
+            print(
+                "\nBlemish Analysis"
+            )
+            print(
+                "------------------------------"
+            )
+            print(
+                "Skipped - blemish analysis failed:"
+            )
+            print(error)
+
+            blemish_results = None
+
+    if blemish_results is not None:
+        
         print("\nBlemish Analysis")
         print("------------------------------")
         print(
@@ -498,11 +750,17 @@ def run_fruit_assessment(
     "classification_image": classification_image,
     "working_image": working_image,
 
+    "roi_results": roi_results,
+
     "gray_image": gray_image,
     "gray_mask": gray_mask,
+    "gray_opened_mask": gray_opened_mask,
+    "gray_refined_mask": gray_refined_mask,
 
     "saturation_image": saturation_image,
     "saturation_mask": saturation_mask,
+    "saturation_opened_mask": saturation_opened_mask,
+    "saturation_refined_mask": saturation_refined_mask,
 
     "combined_mask": combined_mask,
 
@@ -518,6 +776,9 @@ def run_fruit_assessment(
 
     "fruit_mask": fruit_mask,
     "fruit_contour": fruit_contour,
+
+    "fruit_only_colour": fruit_only_colour,
+    "colour_features": colour_features,
 
     "fruit_area_pixels": fruit_area_pixels,
     "fruit_area_cm2": fruit_area_cm2,
@@ -597,6 +858,11 @@ if __name__ == "__main__":
     )
 
     display_results(results)
+
+    display_roi_results(
+        results["roi_results"]
+    )
+
     save_results(results)
 
     print("\nPress any key on an image window to continue to Fruit Ripeness Object Detection.")
