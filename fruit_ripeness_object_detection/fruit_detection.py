@@ -22,6 +22,12 @@ MODEL_C_PATH = (
     / "model_c_best.pt"
 )
 
+MODEL_D_PATH = (
+    PROJECT_ROOT
+    / "models"
+    / "model_d_best.pt"
+)
+
 
 # ============================================================
 # LOAD MODELS
@@ -35,23 +41,9 @@ model_c = YOLO(
     str(MODEL_C_PATH)
 )
 
-print("\n==============================")
-print("CHECKING MODEL CLASSES")
-print("==============================")
-
-print("\nMODEL A PATH:")
-print(MODEL_A_PATH)
-
-print("\nMODEL A CLASSES:")
-print(model_a.names)
-
-print("\nMODEL C PATH:")
-print(MODEL_C_PATH)
-
-print("\nMODEL C CLASSES:")
-print(model_c.names)
-
-print("==============================\n")
+model_d = YOLO(
+    str(MODEL_D_PATH)
+)
 
 
 # ============================================================
@@ -210,6 +202,82 @@ def detect_with_model_c(
 
 
 # ============================================================
+# MODEL D - FRUIT DETECTION
+# ============================================================
+
+def detect_with_model_d(
+    image,
+    confidence_threshold=0.30
+):
+    """
+    Model D:
+    Specialized fruit detector.
+
+    Supported fruits:
+        Apple
+        Banana
+        Grape
+        Mango
+        Melon
+        Orange
+        Peach
+        Pear
+
+    Returns:
+        Fruit type
+        Confidence
+        Bounding box
+    """
+
+    results = model_d.predict(
+        source=image,
+        conf=confidence_threshold,
+        verbose=False
+    )
+
+    detections = []
+
+    for box in results[0].boxes:
+
+        class_id = int(
+            box.cls[0]
+        )
+
+        confidence = float(
+            box.conf[0]
+        )
+
+        fruit_type = str(
+            model_d.names[class_id]
+        ).strip()
+
+        x1, y1, x2, y2 = [
+            int(value)
+            for value
+            in box.xyxy[0].cpu().tolist()
+        ]
+
+        detections.append({
+            "model": "D",
+
+            "fruit_type": fruit_type,
+
+            "confidence": confidence,
+
+            "bounding_box": (
+                x1,
+                y1,
+                x2,
+                y2
+            ),
+
+            "ripeness": None
+        })
+
+    return detections
+
+
+# ============================================================
 # NORMALISE FRUIT NAME
 # ============================================================
 
@@ -346,222 +414,308 @@ def calculate_iou(
 
 
 # ============================================================
-# FUSE MULTIPLE DETECTIONS FROM MODEL A + MODEL C
+# FUSE MODEL A + MODEL C + MODEL D
 # ============================================================
 
 def fuse_detections(
     detections_a,
     detections_c,
+    detections_d,
     iou_threshold=0.30
 ):
     """
-    Fuse multiple fruit detections from Model A and Model C.
+    Fuse fruit detections from Models A, C and D.
 
-    Rules:
-    1. If A and C detect the same fruit at the same location,
-       combine them into one detection.
-    2. If only one model detects a fruit, keep it.
-    3. Multiple different fruits can remain in the final result.
+    Detections are combined when:
+        1. Fruit type is the same
+        2. Bounding boxes overlap sufficiently
 
-    Returns:
-        List of final fruit detections.
+    Multiple fruits of the same type are still allowed
+    when they are located at different positions.
     """
+
+    # ========================================================
+    # COMBINE ALL RAW DETECTIONS
+    # ========================================================
+
+    all_detections = (
+        detections_a
+        + detections_c
+        + detections_d
+    )
+
+    # Highest confidence first
+    all_detections = sorted(
+        all_detections,
+        key=lambda detection:
+        detection["confidence"],
+        reverse=True
+    )
 
     final_detections = []
 
-    # Keep track of Model C detections
-    # that have already been matched.
-    matched_c_indices = set()
-
     # ========================================================
-    # PROCESS EACH MODEL A DETECTION
+    # PROCESS EVERY DETECTION
     # ========================================================
 
-    for detection_a in detections_a:
+    for detection in all_detections:
 
-        fruit_a = normalise_fruit_name(
-            detection_a["fruit_type"]
+        fruit_type = normalise_fruit_name(
+            detection["fruit_type"]
         )
 
-        best_match_index = None
-        best_match_iou = 0.0
+        detection_box = detection[
+            "bounding_box"
+        ]
 
-        # Try to find the same fruit from Model C
-        for c_index, detection_c in enumerate(
-            detections_c
-        ):
+        matching_detection = None
+        best_iou = 0.0
 
-            if c_index in matched_c_indices:
-                continue
+        # ====================================================
+        # LOOK FOR SAME PHYSICAL FRUIT
+        # ====================================================
 
-            fruit_c = normalise_fruit_name(
-                detection_c["fruit_type"]
+        for final_detection in final_detections:
+
+            final_fruit_type = (
+                normalise_fruit_name(
+                    final_detection[
+                        "fruit_type"
+                    ]
+                )
             )
 
-            # Fruit type must agree
-            if fruit_a != fruit_c:
+            # Different fruit type
+            if fruit_type != final_fruit_type:
                 continue
 
             current_iou = calculate_iou(
-                detection_a["bounding_box"],
-                detection_c["bounding_box"]
+                detection_box,
+                final_detection[
+                    "bounding_box"
+                ]
             )
 
             if (
                 current_iou >= iou_threshold
-                and current_iou > best_match_iou
+                and current_iou > best_iou
             ):
-                best_match_iou = current_iou
-                best_match_index = c_index
+
+                best_iou = current_iou
+
+                matching_detection = (
+                    final_detection
+                )
 
         # ====================================================
-        # A + C AGREE
+        # MATCH FOUND
         # ====================================================
 
-        if best_match_index is not None:
+        if matching_detection is not None:
 
-            detection_c = detections_c[
-                best_match_index
+            current_model = detection[
+                "model"
             ]
 
-            matched_c_indices.add(
-                best_match_index
-            )
-
-            # Use bounding box from the
-            # higher-confidence model
+            # Add model if not already included
             if (
-                detection_a["confidence"]
-                >= detection_c["confidence"]
+                current_model
+                not in matching_detection["models"]
             ):
 
-                selected = detection_a.copy()
+                matching_detection[
+                    "models"
+                ].append(
+                    current_model
+                )
 
-            else:
+            # -----------------------------------------------
+            # SAVE MODEL-SPECIFIC CONFIDENCE
+            # -----------------------------------------------
 
-                selected = detection_c.copy()
+            if current_model == "A":
 
-            selected["fruit_type"] = (
-                fruit_a.title()
-            )
+                matching_detection[
+                    "confidence_a"
+                ] = detection[
+                    "confidence"
+                ]
 
-            selected["agreement"] = (
-                "Model A + Model C"
-            )
+            elif current_model == "C":
 
-            selected["models"] = [
-                "A",
-                "C"
-            ]
+                matching_detection[
+                    "confidence_c"
+                ] = detection[
+                    "confidence"
+                ]
 
-            selected["iou"] = (
-                best_match_iou
-            )
-
-            selected["confidence_a"] = (
-                detection_a["confidence"]
-            )
-
-            selected["confidence_c"] = (
-                detection_c["confidence"]
-            )
-
-            # Store Model C ripeness
-            # for later ripeness fusion
-            selected["model_c_ripeness"] = (
-                detection_c.get(
+                # Save Model C ripeness
+                matching_detection[
+                    "model_c_ripeness"
+                ] = detection.get(
                     "ripeness"
                 )
-            )
 
-            final_detections.append(
-                selected
+            elif current_model == "D":
+
+                matching_detection[
+                    "confidence_d"
+                ] = detection[
+                    "confidence"
+                ]
+
+            # -----------------------------------------------
+            # USE HIGHER-CONFIDENCE BOUNDING BOX
+            # -----------------------------------------------
+
+            if (
+                detection["confidence"]
+                >
+                matching_detection["confidence"]
+            ):
+
+                matching_detection[
+                    "confidence"
+                ] = detection[
+                    "confidence"
+                ]
+
+                matching_detection[
+                    "bounding_box"
+                ] = detection[
+                    "bounding_box"
+                ]
+
+                matching_detection[
+                    "model"
+                ] = detection[
+                    "model"
+                ]
+
+            matching_detection[
+                "iou"
+            ] = max(
+                matching_detection.get(
+                    "iou",
+                    0.0
+                ),
+                best_iou
             )
 
         # ====================================================
-        # ONLY MODEL A DETECTED THIS FRUIT
+        # NEW PHYSICAL FRUIT
         # ====================================================
 
         else:
 
-            selected = detection_a.copy()
+            new_detection = {
+                "model": detection["model"],
 
-            selected["fruit_type"] = (
-                fruit_a.title()
-            )
+                "fruit_type": (
+                    fruit_type.title()
+                ),
 
-            selected["agreement"] = (
-                "Model A only"
-            )
+                "confidence": detection[
+                    "confidence"
+                ],
 
-            selected["models"] = [
-                "A"
-            ]
+                "bounding_box": detection[
+                    "bounding_box"
+                ],
 
-            selected["confidence_a"] = (
-                detection_a["confidence"]
-            )
+                "models": [
+                    detection["model"]
+                ],
 
-            selected["confidence_c"] = None
+                "confidence_a": None,
+                "confidence_c": None,
+                "confidence_d": None,
 
-            selected["model_c_ripeness"] = None
+                "model_c_ripeness": None,
+
+                "iou": 0.0
+            }
+
+            # -----------------------------------------------
+            # MODEL-SPECIFIC INFORMATION
+            # -----------------------------------------------
+
+            if detection["model"] == "A":
+
+                new_detection[
+                    "confidence_a"
+                ] = detection[
+                    "confidence"
+                ]
+
+            elif detection["model"] == "C":
+
+                new_detection[
+                    "confidence_c"
+                ] = detection[
+                    "confidence"
+                ]
+
+                new_detection[
+                    "model_c_ripeness"
+                ] = detection.get(
+                    "ripeness"
+                )
+
+            elif detection["model"] == "D":
+
+                new_detection[
+                    "confidence_d"
+                ] = detection[
+                    "confidence"
+                ]
 
             final_detections.append(
-                selected
+                new_detection
             )
 
     # ========================================================
-    # ADD UNMATCHED MODEL C DETECTIONS
+    # CREATE AGREEMENT TEXT
     # ========================================================
 
-    for c_index, detection_c in enumerate(
-        detections_c
-    ):
+    for detection in final_detections:
 
-        if c_index in matched_c_indices:
-            continue
-
-        fruit_c = normalise_fruit_name(
-            detection_c["fruit_type"]
-        )
-
-        selected = detection_c.copy()
-
-        selected["fruit_type"] = (
-            fruit_c.title()
-        )
-
-        selected["agreement"] = (
-            "Model C only"
-        )
-
-        selected["models"] = [
-            "C"
+        models = detection[
+            "models"
         ]
 
-        selected["confidence_a"] = None
+        model_order = [
+            model
+            for model in ["A", "C", "D"]
+            if model in models
+        ]
 
-        selected["confidence_c"] = (
-            detection_c["confidence"]
-        )
+        if len(model_order) == 1:
 
-        selected["model_c_ripeness"] = (
-            detection_c.get(
-                "ripeness"
+            detection[
+                "agreement"
+            ] = (
+                f"Model {model_order[0]} only"
             )
-        )
 
-        final_detections.append(
-            selected
-        )
+        else:
+
+            detection[
+                "agreement"
+            ] = (
+                "Model "
+                + " + Model ".join(
+                    model_order
+                )
+            )
 
     # ========================================================
-    # SORT BY CONFIDENCE
+    # SORT FINAL FRUITS BY CONFIDENCE
     # ========================================================
 
     final_detections.sort(
-        key=lambda item:
-        item["confidence"],
+        key=lambda detection:
+        detection["confidence"],
         reverse=True
     )
 

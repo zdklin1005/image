@@ -38,7 +38,7 @@ from calibration_segmentation.visualisation import (
 from fruit_ripeness_object_detection.fruit_detection import (
     detect_with_model_a,
     detect_with_model_c,
-    # detect_with_model_d,
+    detect_with_model_d,
     fuse_detections,
     draw_final_detections,
     crop_all_detected_fruits
@@ -208,25 +208,53 @@ def run_fruit_assessment(
     # ========================================================
     # MEMBER 3: FRUIT DETECTION
     # ========================================================
-
-    # Model A detects fruit type + bounding box
+    # Model A
     detections_a = detect_with_model_a(
         classification_image,
-        confidence_threshold=0.40
+        confidence_threshold=0.30
     )
 
-    # Model C detects fruit + condition, but only fruit type + bounding box are used at this stage
+    # Model C
     detections_c = detect_with_model_c(
         classification_image,
-        confidence_threshold=0.40
+        confidence_threshold=0.30
+    )
+
+    # Model D
+    detections_d = detect_with_model_d(
+        classification_image,
+        confidence_threshold=0.30
     )
 
     # ========================================================
-    # FUSE MODEL A + MODEL C
+    # RAW DETECTION COUNTS
     # ========================================================
+    print("\nRaw Model Detection Counts")
+    print("------------------------------")
+
+    print(
+        f"Model A : "
+        f"{len(detections_a)}"
+    )
+
+    print(
+        f"Model C : "
+        f"{len(detections_c)}"
+    )
+
+    print(
+        f"Model D : "
+        f"{len(detections_d)}"
+    )
+
+    # ========================================================
+    # FUSE MODEL A + MODEL C + MODEL D
+    # ========================================================
+
     final_detections = fuse_detections(
         detections_a,
         detections_c,
+        detections_d,
         iou_threshold=0.30
     )
 
@@ -950,6 +978,7 @@ def run_fruit_assessment(
 
     "detections_a": detections_a,
     "detections_c": detections_c,
+    "detections_d": detections_d,
 
     "final_detections": final_detections,
 
