@@ -397,13 +397,19 @@ def run_fruit_assessment(
     # MEMBER 3: FRUIT DETECTION AND RIPENESS CLASSIFICATION
     # ========================================================
 
+    segmented_fruit_image = cv2.bitwise_and(
+        working_image,
+        working_image,
+        mask=fruit_mask
+    )
+
     detections = detect_fruit_ripeness(
-        classification_image,
+        segmented_fruit_image,
         confidence_threshold=0.40
     )
 
     detection_image = draw_detections(
-        classification_image,
+        segmented_fruit_image,
         detections
     )
 
