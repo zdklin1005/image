@@ -11,3 +11,6 @@ calibration_segmentation/outputs/*
 
 # Calibration/segmentation test images
 calibration_segmentation/test_images/*
+
+# Google Firestore Keys
+.streamlit/secrets.toml

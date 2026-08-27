@@ -1,12 +1,14 @@
 """
-db.py - SQLite persistence for users (login) and run history (metrics).
+db.py - SQLite persistence for saved analysis run history.
+
+Note: login/user management now lives in Firebase (see firebase_auth.py).
+This file handles run history and role assignment.
 """
 
 import sqlite3
 import datetime
 from pathlib import Path
 
-import bcrypt
 import pandas as pd
 
 DB_PATH = Path(__file__).parent / "data" / "app.db"
@@ -22,71 +24,66 @@ def init_db():
     c = conn.cursor()
 
     c.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL
-        )
-    """)
-
-    c.execute("""
         CREATE TABLE IF NOT EXISTS runs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TEXT NOT NULL,
-            accuracy REAL,
-            precision_score REAL,
-            recall REAL,
+            created_by TEXT,
+            fruit_count INTEGER,
+            avg_confidence REAL,
             processing_time_ms REAL
         )
     """)
-    conn.commit()
 
-    # Seed a default user on first run only
-    c.execute("SELECT COUNT(*) FROM users")
-    if c.fetchone()[0] == 0:
-        default_hash = bcrypt.hashpw("changeme".encode(), bcrypt.gensalt()).decode()
-        c.execute(
-            "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-            ("admin", default_hash),
+    # Migrate DBs created before created_by existed
+    c.execute("PRAGMA table_info(runs)")
+    existing_cols = [row[1] for row in c.fetchall()]
+    if "created_by" not in existing_cols:
+        c.execute("ALTER TABLE runs ADD COLUMN created_by TEXT")
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS user_roles (
+            email TEXT PRIMARY KEY,
+            role TEXT NOT NULL DEFAULT 'client'
         )
-        conn.commit()
-
+    """)
+    conn.commit()
     conn.close()
 
 
-def verify_user(username: str, password: str) -> bool:
+def get_role(email: str) -> str:
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT password_hash FROM users WHERE username = ?", (username,))
+    c.execute("SELECT role FROM user_roles WHERE email = ?", (email,))
     row = c.fetchone()
     conn.close()
-    if row is None:
-        return False
-    return bcrypt.checkpw(password.encode(), row[0].encode())
+    return row[0] if row else "client"
 
 
-def update_password(username: str, new_password: str) -> None:
+def set_role(email: str, role: str) -> None:
     conn = get_connection()
     c = conn.cursor()
-    new_hash = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
-    c.execute("UPDATE users SET password_hash = ? WHERE username = ?", (new_hash, username))
+    c.execute(
+        "INSERT INTO user_roles (email, role) VALUES (?, ?) "
+        "ON CONFLICT(email) DO UPDATE SET role = excluded.role",
+        (email, role),
+    )
     conn.commit()
     conn.close()
 
 
-def add_run(accuracy: float, precision_score: float, recall: float, processing_time_ms: float) -> None:
+def add_run(created_by: str, fruit_count: int, avg_confidence: float, processing_time_ms: float) -> None:
     conn = get_connection()
     c = conn.cursor()
     c.execute(
         """
-        INSERT INTO runs (timestamp, accuracy, precision_score, recall, processing_time_ms)
+        INSERT INTO runs (timestamp, created_by, fruit_count, avg_confidence, processing_time_ms)
         VALUES (?, ?, ?, ?, ?)
         """,
         (
             datetime.datetime.now().isoformat(timespec="seconds"),
-            accuracy,
-            precision_score,
-            recall,
+            created_by,
+            fruit_count,
+            avg_confidence,
             processing_time_ms,
         ),
     )
@@ -94,8 +91,17 @@ def add_run(accuracy: float, precision_score: float, recall: float, processing_t
     conn.close()
 
 
-def get_run_history() -> pd.DataFrame:
+def get_run_history(created_by: str = None) -> pd.DataFrame:
+    """
+    Pass created_by to scope to one user (clients).
+    Pass nothing to get every run (admins).
+    """
     conn = get_connection()
-    df = pd.read_sql_query("SELECT * FROM runs ORDER BY id ASC", conn)
+    if created_by:
+        df = pd.read_sql_query(
+            "SELECT * FROM runs WHERE created_by = ? ORDER BY id DESC", conn, params=(created_by,)
+        )
+    else:
+        df = pd.read_sql_query("SELECT * FROM runs ORDER BY id DESC", conn)
     conn.close()
     return df
