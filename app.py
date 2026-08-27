@@ -25,6 +25,7 @@ shared_pages = [
 ]
 
 admin_only_pages = [
+    st.Page("app_pages/manage_users.py", title="Manage Users", icon="👥"),
     st.Page("app_pages/model_evaluation.py", title="Model Evaluation", icon="🧪"),
     st.Page("app_pages/reports.py", title="Reports", icon="📄"),
 ]
