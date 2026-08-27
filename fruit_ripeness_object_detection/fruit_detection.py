@@ -35,6 +35,24 @@ model_c = YOLO(
     str(MODEL_C_PATH)
 )
 
+print("\n==============================")
+print("CHECKING MODEL CLASSES")
+print("==============================")
+
+print("\nMODEL A PATH:")
+print(MODEL_A_PATH)
+
+print("\nMODEL A CLASSES:")
+print(model_a.names)
+
+print("\nMODEL C PATH:")
+print(MODEL_C_PATH)
+
+print("\nMODEL C CLASSES:")
+print(model_c.names)
+
+print("==============================\n")
+
 
 # ============================================================
 # MODEL A - FRUIT DETECTION
@@ -328,223 +346,290 @@ def calculate_iou(
 
 
 # ============================================================
-# SELECT / FUSE MODEL A + MODEL C
+# FUSE MULTIPLE DETECTIONS FROM MODEL A + MODEL C
 # ============================================================
 
-def select_detection(
+def fuse_detections(
     detections_a,
     detections_c,
     iou_threshold=0.30
 ):
     """
-    Select one primary fruit detection.
+    Fuse multiple fruit detections from Model A and Model C.
 
-    Current version assumes the image contains
-    one main fruit.
+    Rules:
+    1. If A and C detect the same fruit at the same location,
+       combine them into one detection.
+    2. If only one model detects a fruit, keep it.
+    3. Multiple different fruits can remain in the final result.
 
-    If A and C agree on fruit type and their boxes
-    overlap, the higher-confidence box is used.
-
-    If they disagree, the highest-confidence
-    prediction is selected for now.
-
-    Model D will later be added as another vote.
+    Returns:
+        List of final fruit detections.
     """
 
-    if (
-        len(detections_a) == 0
-        and len(detections_c) == 0
-    ):
-        return None
+    final_detections = []
 
-    # Get strongest prediction from each model
-    best_a = None
-    best_c = None
-
-    if detections_a:
-
-        best_a = max(
-            detections_a,
-            key=lambda item:
-            item["confidence"]
-        )
-
-    if detections_c:
-
-        best_c = max(
-            detections_c,
-            key=lambda item:
-            item["confidence"]
-        )
-
-    # Only C detected
-    if best_a is None:
-
-        final_detection = (
-            best_c.copy()
-        )
-
-        final_detection[
-            "agreement"
-        ] = "Model C only"
-
-        return final_detection
-
-    # Only A detected
-    if best_c is None:
-
-        final_detection = (
-            best_a.copy()
-        )
-
-        final_detection[
-            "agreement"
-        ] = "Model A only"
-
-        return final_detection
+    # Keep track of Model C detections
+    # that have already been matched.
+    matched_c_indices = set()
 
     # ========================================================
-    # BOTH MODELS DETECTED SOMETHING
+    # PROCESS EACH MODEL A DETECTION
     # ========================================================
 
-    fruit_a = normalise_fruit_name(
-        best_a["fruit_type"]
-    )
+    for detection_a in detections_a:
 
-    fruit_c = normalise_fruit_name(
-        best_c["fruit_type"]
-    )
+        fruit_a = normalise_fruit_name(
+            detection_a["fruit_type"]
+        )
 
-    iou = calculate_iou(
-        best_a["bounding_box"],
-        best_c["bounding_box"]
-    )
+        best_match_index = None
+        best_match_iou = 0.0
 
-    # Same fruit + overlapping location
-    if (
-        fruit_a == fruit_c
-        and iou >= iou_threshold
-    ):
-
-        if (
-            best_a["confidence"]
-            >= best_c["confidence"]
+        # Try to find the same fruit from Model C
+        for c_index, detection_c in enumerate(
+            detections_c
         ):
 
-            final_detection = (
-                best_a.copy()
+            if c_index in matched_c_indices:
+                continue
+
+            fruit_c = normalise_fruit_name(
+                detection_c["fruit_type"]
             )
+
+            # Fruit type must agree
+            if fruit_a != fruit_c:
+                continue
+
+            current_iou = calculate_iou(
+                detection_a["bounding_box"],
+                detection_c["bounding_box"]
+            )
+
+            if (
+                current_iou >= iou_threshold
+                and current_iou > best_match_iou
+            ):
+                best_match_iou = current_iou
+                best_match_index = c_index
+
+        # ====================================================
+        # A + C AGREE
+        # ====================================================
+
+        if best_match_index is not None:
+
+            detection_c = detections_c[
+                best_match_index
+            ]
+
+            matched_c_indices.add(
+                best_match_index
+            )
+
+            # Use bounding box from the
+            # higher-confidence model
+            if (
+                detection_a["confidence"]
+                >= detection_c["confidence"]
+            ):
+
+                selected = detection_a.copy()
+
+            else:
+
+                selected = detection_c.copy()
+
+            selected["fruit_type"] = (
+                fruit_a.title()
+            )
+
+            selected["agreement"] = (
+                "Model A + Model C"
+            )
+
+            selected["models"] = [
+                "A",
+                "C"
+            ]
+
+            selected["iou"] = (
+                best_match_iou
+            )
+
+            selected["confidence_a"] = (
+                detection_a["confidence"]
+            )
+
+            selected["confidence_c"] = (
+                detection_c["confidence"]
+            )
+
+            # Store Model C ripeness
+            # for later ripeness fusion
+            selected["model_c_ripeness"] = (
+                detection_c.get(
+                    "ripeness"
+                )
+            )
+
+            final_detections.append(
+                selected
+            )
+
+        # ====================================================
+        # ONLY MODEL A DETECTED THIS FRUIT
+        # ====================================================
 
         else:
 
-            final_detection = (
-                best_c.copy()
+            selected = detection_a.copy()
+
+            selected["fruit_type"] = (
+                fruit_a.title()
             )
 
-        final_detection[
-            "fruit_type"
-        ] = fruit_a.title()
+            selected["agreement"] = (
+                "Model A only"
+            )
 
-        final_detection[
-            "agreement"
-        ] = "Model A + Model C"
+            selected["models"] = [
+                "A"
+            ]
 
-        final_detection[
-            "iou"
-        ] = iou
+            selected["confidence_a"] = (
+                detection_a["confidence"]
+            )
 
-        return final_detection
+            selected["confidence_c"] = None
+
+            selected["model_c_ripeness"] = None
+
+            final_detections.append(
+                selected
+            )
 
     # ========================================================
-    # MODELS DISAGREE
+    # ADD UNMATCHED MODEL C DETECTIONS
     # ========================================================
 
-    if (
-        best_a["confidence"]
-        >= best_c["confidence"]
+    for c_index, detection_c in enumerate(
+        detections_c
     ):
 
-        final_detection = (
-            best_a.copy()
+        if c_index in matched_c_indices:
+            continue
+
+        fruit_c = normalise_fruit_name(
+            detection_c["fruit_type"]
         )
 
-    else:
+        selected = detection_c.copy()
 
-        final_detection = (
-            best_c.copy()
+        selected["fruit_type"] = (
+            fruit_c.title()
         )
 
-    final_detection[
-        "agreement"
-    ] = "Models disagree"
+        selected["agreement"] = (
+            "Model C only"
+        )
 
-    final_detection[
-        "iou"
-    ] = iou
+        selected["models"] = [
+            "C"
+        ]
 
-    return final_detection
+        selected["confidence_a"] = None
+
+        selected["confidence_c"] = (
+            detection_c["confidence"]
+        )
+
+        selected["model_c_ripeness"] = (
+            detection_c.get(
+                "ripeness"
+            )
+        )
+
+        final_detections.append(
+            selected
+        )
+
+    # ========================================================
+    # SORT BY CONFIDENCE
+    # ========================================================
+
+    final_detections.sort(
+        key=lambda item:
+        item["confidence"],
+        reverse=True
+    )
+
+    return final_detections
 
 
 # ============================================================
-# DRAW FINAL FRUIT DETECTION
+# DRAW ALL FINAL DETECTIONS
 # ============================================================
 
-def draw_final_detection(
+def draw_final_detections(
     image,
-    final_detection
+    final_detections
 ):
     """
-    Draw the selected final fruit bounding box.
+    Draw all final fruit bounding boxes.
     """
 
     output_image = image.copy()
 
-    if final_detection is None:
-        return output_image
+    for detection in final_detections:
 
-    fruit_type = final_detection[
-        "fruit_type"
-    ]
-
-    confidence = final_detection[
-        "confidence"
-    ]
-
-    x1, y1, x2, y2 = (
-        final_detection[
-            "bounding_box"
+        fruit_type = detection[
+            "fruit_type"
         ]
-    )
 
-    # Red bounding box
-    cv2.rectangle(
-        output_image,
-        (x1, y1),
-        (x2, y2),
-        (0, 0, 255),
-        3
-    )
+        confidence = detection[
+            "confidence"
+        ]
 
-    label = (
-        f"{fruit_type} "
-        f"{confidence * 100:.1f}%"
-    )
+        x1, y1, x2, y2 = (
+            detection[
+                "bounding_box"
+            ]
+        )
 
-    cv2.putText(
-        output_image,
-        label,
-        (x1, max(y1 - 10, 25)),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.8,
-        (0, 0, 255),
-        3
-    )
+        # Red bounding box
+        cv2.rectangle(
+            output_image,
+            (x1, y1),
+            (x2, y2),
+            (0, 0, 255),
+            3
+        )
+
+        label = (
+            f"{fruit_type} "
+            f"{confidence * 100:.1f}%"
+        )
+
+        cv2.putText(
+            output_image,
+            label,
+            (
+                x1,
+                max(y1 - 10, 25)
+            ),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (0, 0, 255),
+            3
+        )
 
     return output_image
 
 
 # ============================================================
-# CROP FINAL FRUIT
+# CROP ONE DETECTED FRUIT
 # ============================================================
 
 def crop_detected_fruit(
@@ -553,7 +638,7 @@ def crop_detected_fruit(
     margin_ratio=0.10
 ):
     """
-    Crop detected fruit with a small margin.
+    Crop one detected fruit with a small margin.
     """
 
     image_height, image_width = (
@@ -595,9 +680,53 @@ def crop_detected_fruit(
         y2 + margin_y
     )
 
-    crop = image[
+    return image[
         y1:y2,
         x1:x2
     ].copy()
 
-    return crop
+
+# ============================================================
+# CROP ALL DETECTED FRUITS
+# ============================================================
+
+def crop_all_detected_fruits(
+    image,
+    final_detections,
+    margin_ratio=0.10
+):
+    """
+    Crop every detected fruit.
+
+    Returns a list containing fruit type,
+    bounding box and cropped image.
+    """
+
+    fruit_crops = []
+
+    for index, detection in enumerate(
+        final_detections,
+        start=1
+    ):
+
+        crop = crop_detected_fruit(
+            image,
+            detection["bounding_box"],
+            margin_ratio=margin_ratio
+        )
+
+        if crop.size == 0:
+            continue
+
+        fruit_crops.append({
+            "index": index,
+            "fruit_type": detection[
+                "fruit_type"
+            ],
+            "bounding_box": detection[
+                "bounding_box"
+            ],
+            "crop": crop
+        })
+
+    return fruit_crops

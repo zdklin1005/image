@@ -38,10 +38,10 @@ from calibration_segmentation.visualisation import (
 from fruit_ripeness_object_detection.fruit_detection import (
     detect_with_model_a,
     detect_with_model_c,
-    #detect_with_model_d,
-    select_detection,
-    draw_final_detection,
-    crop_detected_fruit
+    # detect_with_model_d,
+    fuse_detections,
+    draw_final_detections,
+    crop_all_detected_fruits
 )
 
 from fruit_ripeness_object_detection.blemish import (
@@ -224,17 +224,19 @@ def run_fruit_assessment(
     # ========================================================
     # FUSE MODEL A + MODEL C
     # ========================================================
-
-    final_detection = select_detection(
+    final_detections = fuse_detections(
         detections_a,
         detections_c,
         iou_threshold=0.30
     )
 
+    # ========================================================
+    # FRUIT DETECTION RESULTS
+    # ========================================================
     print("\nFruit Detection")
     print("------------------------------")
 
-    if final_detection is None:
+    if len(final_detections) == 0:
 
         print("No fruit detected.")
 
@@ -242,65 +244,74 @@ def run_fruit_assessment(
             classification_image.copy()
         )
 
-        fruit_crop = None
+        fruit_crops = []
 
     else:
 
         print(
-            f"Fruit      : "
-            f"{final_detection['fruit_type']}"
+            f"Total fruits detected: "
+            f"{len(final_detections)}"
         )
 
-        print(
-            f"Model used : "
-            f"{final_detection['model']}"
-        )
-
-        print(
-            f"Confidence : "
-            f"{final_detection['confidence'] * 100:.2f}%"
-        )
-
-        print(
-            f"Bounding box : "
-            f"{final_detection['bounding_box']}"
-        )
-
-        print(
-            f"Agreement   : "
-            f"{final_detection['agreement']}"
-        )
-
-        if "iou" in final_detection:
+        for index, detection in enumerate(
+            final_detections,
+            start=1
+        ):
 
             print(
-                f"Model IoU   : "
-                f"{final_detection['iou']:.2f}"
+                f"\nFruit {index}"
             )
 
-        # -----------------------------------------------
-        # DRAW FINAL DETECTION
-        # -----------------------------------------------
+            print(
+                f"Fruit      : "
+                f"{detection['fruit_type']}"
+            )
+
+            print(
+                f"Confidence : "
+                f"{detection['confidence'] * 100:.2f}%"
+            )
+
+            print(
+                f"Bounding box : "
+                f"{detection['bounding_box']}"
+            )
+
+            print(
+                f"Agreement   : "
+                f"{detection['agreement']}"
+            )
+
+            if "iou" in detection:
+
+                print(
+                    f"Model IoU   : "
+                    f"{detection['iou']:.2f}"
+                )
+
+        # ====================================================
+        # DRAW ALL FRUIT BOXES
+        # ====================================================
 
         detection_image = (
-            draw_final_detection(
+            draw_final_detections(
                 classification_image,
-                final_detection
+                final_detections
             )
         )
 
-        # -----------------------------------------------
-        # CROP FRUIT USING FINAL BOUNDING BOX
-        # -----------------------------------------------
+        # ====================================================
+        # CROP ALL FRUITS
+        # ====================================================
 
-        fruit_crop = crop_detected_fruit(
-            classification_image,
-            final_detection[
-                "bounding_box"
-            ],
-            margin_ratio=0.10
+        fruit_crops = (
+            crop_all_detected_fruits(
+                classification_image,
+                final_detections,
+                margin_ratio=0.10
+            )
         )
-
+    
     # ========================================================
     # FRUIT DETECTION
     # ========================================================
@@ -329,23 +340,45 @@ def run_fruit_assessment(
     )
 
 
-    # Show cropped fruit
-    if fruit_crop is not None:
+    # ========================================================
+    # SHOW ALL DETECTED FRUIT CROPS
+    # ========================================================
+    for fruit_crop_result in fruit_crops:
+
+        fruit_index = (
+            fruit_crop_result["index"]
+        )
+
+        fruit_type = (
+            fruit_crop_result[
+                "fruit_type"
+            ]
+        )
+
+        crop_image = (
+            fruit_crop_result[
+                "crop"
+            ]
+        )
+
+        window_name = (
+            f"Fruit {fruit_index} - "
+            f"{fruit_type}"
+        )
 
         cv2.namedWindow(
-            "Detected Fruit Crop",
+            window_name,
             cv2.WINDOW_NORMAL
         )
 
         cv2.imshow(
-            "Detected Fruit Crop",
-            fruit_crop
+            window_name,
+            crop_image
         )
 
 
     print(
-        "\nPress any key on the Fruit Detection "
-        "window to continue to Member 2 segmentation."
+        "\nPress any key on the Fruit Detection window to continue."
     )
 
     cv2.waitKey(0)
@@ -649,134 +682,149 @@ def run_fruit_assessment(
             "Not available"
         )
 
+
     # ========================================================
     # MEMBER 2: ROI-BASED SEGMENTATION
     # ========================================================
-
     roi_results = []
 
     print("\nROI Fruit Processing")
     print("------------------------------")
 
-    if final_detection is None:
+    if len(final_detections) == 0:
 
         print(
-            "Skipped - no YOLO fruit detections available."
+            "Skipped - no fruit detections available."
         )
 
     else:
-        try:
-            roi_result = process_fruit_roi(
-                working_image,
-                final_detection["bounding_box"],
-                use_watershed=False
-            )
 
-            # Attach YOLO information
-            roi_result["fruit_type"] = final_detection[
-                "fruit_type"
-            ]
+        for index, detection in enumerate(
+            final_detections,
+            start=1
+        ):
 
-            roi_result["detection_model"] = final_detection[
-                "model"
-            ]
+            try:
 
-            #roi_result["ripeness"] = final_detection[
-            #    "ripeness"
-            #]
+                roi_result = process_fruit_roi(
+                    working_image,
+                    detection[
+                        "bounding_box"
+                    ],
+                    use_watershed=False
+                )
 
-            roi_result["detection_confidence"] = final_detection[
-                "confidence"
-            ]
+                # ============================================
+                # ATTACH FRUIT DETECTION INFORMATION
+                # ============================================
 
-            roi_results.append(
-                roi_result
-            )
+                roi_result[
+                    "fruit_index"
+                ] = index
 
-            roi_colour_features = roi_result[
-                "colour_features"
-            ]
+                roi_result[
+                    "fruit_type"
+                ] = detection[
+                    "fruit_type"
+                ]
 
-            #print(
-            #    f"\nFruit ROI {index}"
-            #)
+                roi_result[
+                    "detection_model"
+                ] = detection[
+                    "agreement"
+                ]
 
-            print(
-                f"Fruit        : "
-                f"{roi_result['fruit_type']}"
-            )
+                roi_result[
+                    "detection_confidence"
+                ] = detection[
+                    "confidence"
+                ]
 
-            print(
-                f"Detection model : "
-                f"{roi_result['detection_model']}"
-            )
+                # Save Model C ripeness for later.
+                # Do not use as final ripeness yet.
+                roi_result[
+                    "model_c_ripeness"
+                ] = detection.get(
+                    "model_c_ripeness"
+                )
 
-            print(
-                f"Watershed    : "
-                f"{'Enabled' if roi_result['watershed_used'] else 'Disabled'}"
-            )
+                roi_results.append(
+                    roi_result
+                )
 
-            if roi_result["fruit_labels"] is not None:
+                roi_colour_features = (
+                    roi_result[
+                        "colour_features"
+                    ]
+                )
+
                 print(
-                    f"Regions      : "
-                    f"{len(roi_result['fruit_labels'])}"
-            )
-                
-            #print(
-            #    f"Ripeness     : "
-            #    f"{roi_result['ripeness']}"
-            #)
+                    f"\nFruit ROI {index}"
+                )
 
-            print(
-                f"Confidence   : "
-                f"{roi_result['detection_confidence'] * 100:.2f}%"
-            )
+                print(
+                    f"Fruit        : "
+                    f"{roi_result['fruit_type']}"
+                )
 
-            print(
-                f"Bounding box : "
-                f"{roi_result['bounding_box']}"
-            )
+                print(
+                    f"Detection    : "
+                    f"{roi_result['detection_model']}"
+                )
 
-            print(
-                f"ROI area     : "
-                f"{roi_result['fruit_area_pixels']} pixels^2"
-            )
+                print(
+                    f"Confidence   : "
+                    f"{roi_result['detection_confidence'] * 100:.2f}%"
+                )
 
-            print(
-                f"Mean Red     : "
-                f"{roi_colour_features['mean_red']:.2f}"
-            )
+                print(
+                    f"Bounding box : "
+                    f"{roi_result['bounding_box']}"
+                )
 
-            print(
-                f"Mean Green   : "
-                f"{roi_colour_features['mean_green']:.2f}"
-            )
+                print(
+                    f"ROI area     : "
+                    f"{roi_result['fruit_area_pixels']} "
+                    f"pixels^2"
+                )
 
-            print(
-                f"Mean Blue    : "
-                f"{roi_colour_features['mean_blue']:.2f}"
-            )
+                print(
+                    f"Mean Red     : "
+                    f"{roi_colour_features['mean_red']:.2f}"
+                )
 
-            print(
-                f"Dominant Hue : "
-                f"{roi_colour_features['dominant_hue']}"
-            )
+                print(
+                    f"Mean Green   : "
+                    f"{roi_colour_features['mean_green']:.2f}"
+                )
 
-            print(
-                f"Mean Saturation : "
-                f"{roi_colour_features['mean_saturation']:.2f}"
-            )
+                print(
+                    f"Mean Blue    : "
+                    f"{roi_colour_features['mean_blue']:.2f}"
+                )
 
-            print(
-                f"Mean Value      : "
-                f"{roi_colour_features['mean_value']:.2f}"
-            )
+                print(
+                    f"Dominant Hue : "
+                    f"{roi_colour_features['dominant_hue']}"
+                )
 
-        except ValueError as error:
-            print(
-                "ROI segmentation failed:"
-            )
-            print(error)
+                print(
+                    f"Mean Saturation : "
+                    f"{roi_colour_features['mean_saturation']:.2f}"
+                )
+
+                print(
+                    f"Mean Value      : "
+                    f"{roi_colour_features['mean_value']:.2f}"
+                )
+
+            except ValueError as error:
+
+                print(
+                    f"\nFruit ROI {index} failed:"
+                )
+
+                print(error)
 
 
 #    # ========================================================
@@ -903,9 +951,9 @@ def run_fruit_assessment(
     "detections_a": detections_a,
     "detections_c": detections_c,
 
-    "final_detection": final_detection,
+    "final_detections": final_detections,
 
-    "fruit_crop": fruit_crop,
+    "fruit_crops": fruit_crops,
 
     "detection_image": detection_image,
 
