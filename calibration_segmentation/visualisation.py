@@ -1,6 +1,249 @@
 import cv2
 import os
+import numpy as np
 
+def display_roi_results(
+    roi_results
+):
+    """
+    Display one combined panel for each ROI.
+    """
+
+    if not roi_results:
+        print(
+            "No ROI results available for visualisation."
+        )
+        return
+
+    for index, roi_result in enumerate(
+        roi_results,
+        start=1
+    ):
+
+        panel = create_roi_visualisation_panel(
+            roi_result,
+            index
+        )
+
+        window_name = (
+            f"ROI {index} - Processing Results"
+        )
+
+        cv2.namedWindow(
+            window_name,
+            cv2.WINDOW_NORMAL
+        )
+
+        cv2.imshow(
+            window_name,
+            panel
+        )
+
+        cv2.resizeWindow(
+            window_name,
+            panel.shape[1],
+            panel.shape[0]
+        )
+
+def prepare_panel_image(image, size=(420, 300)):
+    """
+    Resize an image for panel display.
+    Converts grayscale images to BGR so all
+    panel images have the same number of channels.
+    """
+
+    if image is None:
+        return None
+
+    if len(image.shape) == 2:
+        image = cv2.cvtColor(
+            image,
+            cv2.COLOR_GRAY2BGR
+        )
+
+    return cv2.resize(
+        image,
+        size,
+        interpolation=cv2.INTER_AREA
+    )
+
+def add_panel_label(image, label):
+    """
+    Add a simple label at the top-left of a panel image.
+    """
+
+    labelled_image = image.copy()
+
+    cv2.putText(
+        labelled_image,
+        label,
+        (10, 25),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.6,
+        (255, 255, 255),
+        2,
+        cv2.LINE_AA
+    )
+
+    cv2.putText(
+        labelled_image,
+        label,
+        (10, 25),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.6,
+        (0, 0, 0),
+        1,
+        cv2.LINE_AA
+    )
+
+    return labelled_image
+
+def create_roi_visualisation_panel(
+    roi_result,
+    index
+):
+    """
+    Create one combined visualisation panel
+    for a YOLO-detected fruit ROI.
+    """
+
+    fruit_type = roi_result.get(
+        "fruit_type",
+        "Fruit"
+    )
+
+    ripeness = roi_result.get(
+        "ripeness",
+        "Unknown"
+    )
+
+    confidence = roi_result.get(
+        "confidence",
+        0.0
+    )
+
+    # ----------------------------------------------------
+    # Prepare images
+    # ----------------------------------------------------
+
+    roi_image = prepare_panel_image(
+        roi_result["roi_image"]
+    )
+
+    gray_mask = prepare_panel_image(
+        roi_result["gray_refined_mask"]
+    )
+
+    saturation_mask = prepare_panel_image(
+        roi_result["saturation_refined_mask"]
+    )
+
+    combined_mask = prepare_panel_image(
+        roi_result["combined_mask"]
+    )
+
+    final_mask = prepare_panel_image(
+        roi_result["fruit_mask"]
+    )
+
+    fruit_colour = prepare_panel_image(
+        roi_result["fruit_only_colour"]
+    )
+
+    # ----------------------------------------------------
+    # Add labels
+    # ----------------------------------------------------
+
+    roi_image = add_panel_label(
+        roi_image,
+        "ROI Image"
+    )
+
+    gray_mask = add_panel_label(
+        gray_mask,
+        "Grayscale Mask"
+    )
+
+    saturation_mask = add_panel_label(
+        saturation_mask,
+        "Saturation Mask"
+    )
+
+    combined_mask = add_panel_label(
+        combined_mask,
+        "Combined Mask"
+    )
+
+    final_mask = add_panel_label(
+        final_mask,
+        "Final Fruit Mask"
+    )
+
+    fruit_colour = add_panel_label(
+        fruit_colour,
+        "Fruit Only Colour"
+    )
+
+    # ----------------------------------------------------
+    # Build 2 x 3 panel
+    # ----------------------------------------------------
+
+    top_row = cv2.hconcat([
+        roi_image,
+        gray_mask,
+        saturation_mask
+    ])
+
+    bottom_row = cv2.hconcat([
+        combined_mask,
+        final_mask,
+        fruit_colour
+    ])
+
+    panel = cv2.vconcat([
+        top_row,
+        bottom_row
+    ])
+
+    # ----------------------------------------------------
+    # Add header
+    # ----------------------------------------------------
+
+    header_height = 55
+
+    header = np.zeros(
+        (
+            header_height,
+            panel.shape[1],
+            3
+        ),
+        dtype=np.uint8
+    )
+
+    header_text = (
+        f"ROI {index} | "
+        f"{fruit_type} | "
+        f"{ripeness} | "
+        f"Confidence: {confidence * 100:.2f}%"
+    )
+
+    cv2.putText(
+        header,
+        header_text,
+        (15, 35),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.8,
+        (255, 255, 255),
+        2,
+        cv2.LINE_AA
+    )
+
+    panel = cv2.vconcat([
+        header,
+        panel
+    ])
+
+    return panel
 
 def create_contour_image(image, fruit_contour):
     """
@@ -30,6 +273,39 @@ def create_contour_image(image, fruit_contour):
 
     return contour_image
 
+def create_watershed_visualisation(
+    image,
+    watershed_markers
+):
+    """
+    Draw Watershed boundaries on a copy of the colour image.
+
+    Watershed boundaries are represented by marker value -1.
+    """
+
+    if image is None:
+        raise ValueError(
+            "Input image cannot be None."
+        )
+
+    if watershed_markers is None:
+        raise ValueError(
+            "Watershed markers cannot be None."
+        )
+
+    if image.shape[:2] != watershed_markers.shape[:2]:
+        raise ValueError(
+            "Image and Watershed marker dimensions must match."
+        )
+
+    watershed_image = image.copy()
+
+    # Mark Watershed boundaries in red
+    watershed_image[
+        watershed_markers == -1
+    ] = [0, 0, 255]
+
+    return watershed_image
 
 def display_results(results):
     """
@@ -56,10 +332,17 @@ def display_results(results):
         "fruit_contour"
     ]
 
+    fruit_only_colour = results[
+        "fruit_only_colour"
+    ]
+
     contour_image = create_contour_image(
         working_image,
         fruit_contour
     )
+
+
+
 
     cv2.namedWindow(
         "Working Image",
@@ -78,6 +361,11 @@ def display_results(results):
 
     cv2.namedWindow(
         "Final Fruit Mask",
+        cv2.WINDOW_NORMAL
+    )
+
+    cv2.namedWindow(
+        "Fruit Only Colour",
         cv2.WINDOW_NORMAL
     )
 
@@ -111,6 +399,10 @@ def display_results(results):
         contour_image
     )
 
+    cv2.imshow(
+        "Fruit Only Colour",
+        fruit_only_colour
+    )
     #cv2.waitKey(0)
     #cv2.destroyAllWindows()
 
@@ -136,6 +428,10 @@ def save_results(
         "gray_mask"
     ]
 
+    combined_mask = results[
+        "combined_mask"
+    ]
+
     saturation_mask = results[
         "saturation_mask"
     ]
@@ -152,41 +448,125 @@ def save_results(
         "fruit_contour"
     ]
 
+    detection_image = results.get(
+        "detection_image"
+    )
+
     contour_image = create_contour_image(
         working_image,
         fruit_contour
     )
 
-    cv2.imwrite(
-        f"{output_dir}/working_image.jpg",
-        working_image
+    fruit_only_colour = results[
+        "fruit_only_colour"
+    ]
+
+
+    output_images = {
+        "working_image.jpg": working_image,
+        "otsu_gray_mask.png": gray_mask,
+        "combined_otsu_mask.png": combined_mask,
+        "otsu_saturation_mask.png": saturation_mask,
+        "refined_mask.png": refined_mask,
+        "final_fruit_mask.png": fruit_mask,
+        "fruit_contour.jpg": contour_image,
+        "fruit_only_colour.jpg": fruit_only_colour,
+    }
+
+    if detection_image is not None:
+        output_images["fruit_detection.jpg"] = detection_image
+
+    for filename, image in output_images.items():
+        output_path = os.path.join(output_dir, filename)
+        if not cv2.imwrite(output_path, image):
+            raise IOError(f"Failed to save result image: {output_path}")
+
+    roi_results = results.get(
+        "roi_results",
+        []
     )
 
-    cv2.imwrite(
-        f"{output_dir}/otsu_gray_mask.png",
-        gray_mask
-    )
+    for index, roi_result in enumerate(
+        roi_results,
+        start=1
+    ):
 
-    cv2.imwrite(
-        f"{output_dir}/otsu_saturation_mask.png",
-        saturation_mask
-    )
+        # ----------------------------------------------------
+        # Save combined ROI processing panel
+        # ----------------------------------------------------
 
-    cv2.imwrite(
-        f"{output_dir}/refined_mask.png",
-        refined_mask
-    )
+        roi_panel = create_roi_visualisation_panel(
+            roi_result,
+            index
+        )
 
-    cv2.imwrite(
-        f"{output_dir}/final_fruit_mask.png",
-        fruit_mask
-    )
+        roi_panel_path = os.path.join(
+            output_dir,
+            f"roi_{index}_panel.jpg"
+        )
 
-    cv2.imwrite(
-        f"{output_dir}/fruit_contour.jpg",
-        contour_image
-    )
+        if not cv2.imwrite(
+            roi_panel_path,
+            roi_panel
+        ):
+            raise IOError(
+                f"Failed to save ROI panel: "
+                f"{roi_panel_path}"
+            )
 
-    print(
-        f"\nResults saved to: {output_dir}"
-    )
+
+        # ----------------------------------------------------
+        # Save original cropped ROI
+        # ----------------------------------------------------
+
+        roi_image_path = os.path.join(
+            output_dir,
+            f"roi_{index}_original.jpg"
+        )
+
+        if not cv2.imwrite(
+            roi_image_path,
+            roi_result["roi_image"]
+        ):
+            raise IOError(
+                f"Failed to save ROI image: "
+                f"{roi_image_path}"
+            )
+
+
+        # ----------------------------------------------------
+        # Save final ROI fruit mask
+        # ----------------------------------------------------
+
+        roi_mask_path = os.path.join(
+            output_dir,
+            f"roi_{index}_mask.png"
+        )
+
+        if not cv2.imwrite(
+            roi_mask_path,
+            roi_result["fruit_mask"]
+        ):
+            raise IOError(
+                f"Failed to save ROI mask: "
+                f"{roi_mask_path}"
+            )
+
+
+        # ----------------------------------------------------
+        # Save fruit-only colour result
+        # ----------------------------------------------------
+
+        roi_fruit_only_path = os.path.join(
+            output_dir,
+            f"roi_{index}_fruit_only.jpg"
+        )
+
+        if not cv2.imwrite(
+            roi_fruit_only_path,
+            roi_result["fruit_only_colour"]
+        ):
+            raise IOError(
+                f"Failed to save ROI fruit-only image: "
+                f"{roi_fruit_only_path}"
+            )
