@@ -44,6 +44,12 @@ from fruit_ripeness_object_detection.fruit_detection import (
     crop_all_detected_fruits
 )
 
+from fruit_ripeness_object_detection.ripeness_classification import (
+    classify_with_model_b,
+    classify_with_model_e,
+    fuse_ripeness
+)
+
 from fruit_ripeness_object_detection.blemish import (
     detect_fruit_blemish
 )
