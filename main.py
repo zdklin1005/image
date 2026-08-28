@@ -738,6 +738,14 @@ def run_fruit_assessment(
             start=1
         ):
 
+            if not detection.get("is_supported", True):
+                print(
+                    f"\nFruit ROI {index} skipped: "
+                    f"{detection.get('detected_fruit_type', 'Unknown')} "
+                    "is not supported by this system."
+                )
+                continue
+
             try:
 
                 roi_result = process_fruit_roi(
@@ -1495,4 +1503,3 @@ if __name__ == "__main__":
 #
 #        cv2.waitKey(0)
 #        cv2.destroyAllWindows()
-        

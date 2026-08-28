@@ -46,6 +46,18 @@ model_d = YOLO(
 )
 
 
+SUPPORTED_FRUITS = {
+    "apple",
+    "banana",
+    "grape",
+    "mango",
+    "melon",
+    "orange",
+    "peach",
+    "pear",
+}
+
+
 # ============================================================
 # MODEL A - FRUIT DETECTION
 # ============================================================
@@ -578,10 +590,25 @@ def fuse_detections(
         ]
 
         model_c_detection = best_by_model.get("C")
+        model_c_fruit_class = (
+            normalise_fruit_name(model_c_detection["fruit_type"])
+            if model_c_detection is not None else None
+        )
+        model_c_matches_final = (
+            model_c_fruit_class == winning_class
+            if model_c_fruit_class is not None else False
+        )
+        is_supported = winning_class in SUPPORTED_FRUITS
+        displayed_fruit_type = (
+            winning_class.title()
+            if is_supported else "Unsupported"
+        )
 
         final_detections.append({
             "model": representative["model"],
-            "fruit_type": winning_class.title(),
+            "fruit_type": displayed_fruit_type,
+            "detected_fruit_type": winning_class.title(),
+            "is_supported": is_supported,
             "confidence": representative["confidence"],
             "bounding_box": representative["bounding_box"],
             "models": model_order,
@@ -599,8 +626,21 @@ def fuse_detections(
             ),
             "model_c_ripeness": (
                 model_c_detection.get("ripeness")
+                if (
+                    model_c_detection is not None
+                    and model_c_matches_final
+                    and is_supported
+                ) else None
+            ),
+            "model_c_raw_ripeness": (
+                model_c_detection.get("ripeness")
                 if model_c_detection is not None else None
             ),
+            "model_c_fruit_type": (
+                model_c_fruit_class.title()
+                if model_c_fruit_class is not None else None
+            ),
+            "model_c_matches_final": model_c_matches_final,
             "iou": max(pairwise_ious, default=0.0),
             "agreement": agreement,
             "class_disagreement": class_disagreement,
