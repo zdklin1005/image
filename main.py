@@ -77,7 +77,7 @@ def run_fruit_assessment(
     reference_width_cm=None,
     reference_height_cm=None,
     target_pixels_per_cm=20,
-    use_watershed=False
+    use_watershed=True
 ):
     """
     Run the integrated fruit image-processing pipeline.
@@ -596,7 +596,7 @@ def run_fruit_assessment(
         ) = apply_watershed_segmentation(
             working_image,
             refined_mask,
-            foreground_ratio=0.4
+            foreground_ratio=0.55
         )
 
         measurement_mask = separated_mask
@@ -745,7 +745,33 @@ def run_fruit_assessment(
                     detection[
                         "bounding_box"
                     ],
-                    use_watershed=False
+                    use_watershed=use_watershed,
+                    global_refined_mask=refined_mask
+                )
+
+                print(
+                    f"Bounding box : "
+                    f"{roi_result['bounding_box']}"
+                )
+
+                print(
+                    f"Watershed    : "
+                    f"{'Enabled' if roi_result.get('watershed_used', False) else 'Disabled'}"
+                )
+
+                if roi_result.get(
+                    "fruit_labels"
+                ) is not None:
+
+                    print(
+                        f"Regions      : "
+                        f"{len(roi_result['fruit_labels'])}"
+                    )
+
+                print(
+                    f"ROI area     : "
+                    f"{roi_result['fruit_area_pixels']} "
+                    f"pixels^2"
                 )
 
                 # ============================================
@@ -1401,7 +1427,9 @@ if __name__ == "__main__":
         image_path=image_path,
 
         # Kaggle image:
-        calibration_mode=False
+        calibration_mode=False,
+
+        use_watershed=False
     )
 
     # ========================================================

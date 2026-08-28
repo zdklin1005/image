@@ -44,6 +44,34 @@ def display_roi_results(
             panel.shape[1],
             panel.shape[0]
         )
+    watershed_panel = (
+        create_roi_watershed_panel(
+            roi_result,
+            index
+        )
+    )
+
+    if watershed_panel is not None:
+
+        watershed_window_name = (
+            f"ROI {index} - Watershed Results"
+        )
+
+        cv2.namedWindow(
+            watershed_window_name,
+            cv2.WINDOW_NORMAL
+        )
+
+        cv2.imshow(
+            watershed_window_name,
+            watershed_panel
+        )
+
+        cv2.resizeWindow(
+            watershed_window_name,
+            watershed_panel.shape[1],
+            watershed_panel.shape[0]
+        )
 
 def prepare_panel_image(image, size=(420, 300)):
     """
@@ -118,7 +146,7 @@ def create_roi_visualisation_panel(
     )
 
     confidence = roi_result.get(
-        "confidence",
+        "detection_confidence",
         0.0
     )
 
@@ -244,6 +272,212 @@ def create_roi_visualisation_panel(
     ])
 
     return panel
+
+def create_roi_watershed_panel(
+    roi_result,
+    index
+):
+    """
+    Create a Watershed-specific visualisation
+    panel for one fruit ROI.
+    """
+
+    if not roi_result.get(
+        "watershed_used",
+        False
+    ):
+        return None
+
+    distance_transform = roi_result.get(
+        "distance_transform"
+    )
+
+    sure_foreground = roi_result.get(
+        "sure_foreground"
+    )
+
+    separated_mask = roi_result.get(
+        "separated_mask"
+    )
+
+    watershed_markers = roi_result.get(
+        "watershed_markers"
+    )
+
+    roi_image = roi_result.get(
+        "roi_image"
+    )
+
+    if (
+        distance_transform is None
+        or sure_foreground is None
+        or separated_mask is None
+        or watershed_markers is None
+        or roi_image is None
+    ):
+        return None
+
+    # ----------------------------------------------------
+    # Convert distance transform to visible 0-255 image
+    # ----------------------------------------------------
+
+    distance_display = cv2.normalize(
+        distance_transform,
+        None,
+        0,
+        255,
+        cv2.NORM_MINMAX
+    ).astype(
+        np.uint8
+    )
+
+    # ----------------------------------------------------
+    # Watershed boundary visualisation
+    # ----------------------------------------------------
+
+    watershed_image = (
+        create_watershed_visualisation(
+            roi_image,
+            watershed_markers
+        )
+    )
+
+    # ----------------------------------------------------
+    # Prepare panel images
+    # ----------------------------------------------------
+
+    roi_display = prepare_panel_image(
+        roi_image
+    )
+
+    distance_display = prepare_panel_image(
+        distance_display
+    )
+
+    sure_foreground_display = (
+        prepare_panel_image(
+            sure_foreground
+        )
+    )
+
+    separated_display = prepare_panel_image(
+        separated_mask
+    )
+
+    watershed_display = prepare_panel_image(
+        watershed_image
+    )
+
+    fruit_mask_display = prepare_panel_image(
+        roi_result["fruit_mask"]
+    )
+
+    # ----------------------------------------------------
+    # Labels
+    # ----------------------------------------------------
+
+    roi_display = add_panel_label(
+        roi_display,
+        "ROI Image"
+    )
+
+    distance_display = add_panel_label(
+        distance_display,
+        "Distance Transform"
+    )
+
+    sure_foreground_display = add_panel_label(
+        sure_foreground_display,
+        "Sure Foreground"
+    )
+
+    separated_display = add_panel_label(
+        separated_display,
+        "Separated Mask"
+    )
+
+    watershed_display = add_panel_label(
+        watershed_display,
+        "Watershed Boundaries"
+    )
+
+    fruit_mask_display = add_panel_label(
+        fruit_mask_display,
+        "Selected Fruit Mask"
+    )
+
+    # ----------------------------------------------------
+    # 2 x 3 panel
+    # ----------------------------------------------------
+
+    top_row = cv2.hconcat([
+        roi_display,
+        distance_display,
+        sure_foreground_display
+    ])
+
+    bottom_row = cv2.hconcat([
+        separated_display,
+        watershed_display,
+        fruit_mask_display
+    ])
+
+    panel = cv2.vconcat([
+        top_row,
+        bottom_row
+    ])
+
+    # ----------------------------------------------------
+    # Header
+    # ----------------------------------------------------
+
+    fruit_type = roi_result.get(
+        "fruit_type",
+        "Fruit"
+    )
+
+    fruit_labels = roi_result.get(
+        "fruit_labels"
+    )
+
+    region_count = (
+        len(fruit_labels)
+        if fruit_labels is not None
+        else 0
+    )
+
+    header_height = 55
+
+    header = np.zeros(
+        (
+            header_height,
+            panel.shape[1],
+            3
+        ),
+        dtype=np.uint8
+    )
+
+    header_text = (
+        f"ROI {index} | "
+        f"{fruit_type} | "
+        f"Watershed Regions: {region_count}"
+    )
+
+    cv2.putText(
+        header,
+        header_text,
+        (15, 35),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.8,
+        (255, 255, 255),
+        2,
+        cv2.LINE_AA
+    )
+
+    return cv2.vconcat([
+        header,
+        panel
+    ])
 
 def create_contour_image(image, fruit_contour):
     """
@@ -570,3 +804,105 @@ def save_results(
                 f"Failed to save ROI fruit-only image: "
                 f"{roi_fruit_only_path}"
             )
+
+        # ----------------------------------------------------
+        # Save Watershed-specific ROI results
+        # ----------------------------------------------------
+
+        if roi_result.get(
+            "watershed_used",
+            False
+        ):
+
+            distance_transform = roi_result.get(
+                "distance_transform"
+            )
+
+            sure_foreground = roi_result.get(
+                "sure_foreground"
+            )
+
+            separated_mask = roi_result.get(
+                "separated_mask"
+            )
+
+            watershed_markers = roi_result.get(
+                "watershed_markers"
+            )
+
+            if distance_transform is not None:
+
+                distance_display = cv2.normalize(
+                    distance_transform,
+                    None,
+                    0,
+                    255,
+                    cv2.NORM_MINMAX
+                ).astype(
+                    np.uint8
+                )
+
+                cv2.imwrite(
+                    os.path.join(
+                        output_dir,
+                        f"roi_{index}_distance_transform.png"
+                    ),
+                    distance_display
+                )
+
+            if sure_foreground is not None:
+
+                cv2.imwrite(
+                    os.path.join(
+                        output_dir,
+                        f"roi_{index}_sure_foreground.png"
+                    ),
+                    sure_foreground
+                )
+
+            if separated_mask is not None:
+
+                cv2.imwrite(
+                    os.path.join(
+                        output_dir,
+                        f"roi_{index}_separated_mask.png"
+                    ),
+                    separated_mask
+                )
+
+            if (
+                watershed_markers is not None
+                and roi_result.get("roi_image") is not None
+            ):
+
+                watershed_image = (
+                    create_watershed_visualisation(
+                        roi_result["roi_image"],
+                        watershed_markers
+                    )
+                )
+
+                cv2.imwrite(
+                    os.path.join(
+                        output_dir,
+                        f"roi_{index}_watershed_boundaries.jpg"
+                    ),
+                    watershed_image
+                )
+
+            watershed_panel = (
+                create_roi_watershed_panel(
+                    roi_result,
+                    index
+                )
+            )
+
+            if watershed_panel is not None:
+
+                cv2.imwrite(
+                    os.path.join(
+                        output_dir,
+                        f"roi_{index}_watershed_panel.jpg"
+                    ),
+                    watershed_panel
+                )

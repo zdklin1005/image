@@ -412,6 +412,72 @@ def calculate_iou(
         / union_area
     )
 
+def suppress_duplicate_detections(
+    detections,
+    iou_threshold=0.75
+):
+    """
+    Remove highly overlapping detections that most
+    likely represent the same physical fruit.
+
+    Fruit class is ignored during this final check
+    because different models may assign different
+    classes to the same physical fruit.
+    """
+
+    if not detections:
+        return []
+
+    def detection_priority(detection):
+
+        model_count = len(
+            detection.get(
+                "models",
+                []
+            )
+        )
+
+        confidence = detection.get(
+            "confidence",
+            0.0
+        )
+
+        return (
+            model_count,
+            confidence
+        )
+
+    sorted_detections = sorted(
+        detections,
+        key=detection_priority,
+        reverse=True
+    )
+
+    kept = []
+
+    for candidate in sorted_detections:
+
+        is_duplicate = False
+
+        for existing in kept:
+
+            overlap = calculate_iou(
+                candidate["bounding_box"],
+                existing["bounding_box"]
+            )
+
+            if overlap >= iou_threshold:
+
+                is_duplicate = True
+                break
+
+        if not is_duplicate:
+
+            kept.append(
+                candidate
+            )
+
+    return kept
 
 # ============================================================
 # FUSE MODEL A + MODEL C + MODEL D
@@ -708,6 +774,17 @@ def fuse_detections(
                     model_order
                 )
             )
+
+
+    # ========================================================
+    # FINAL CROSS-CLASS DUPLICATE SUPPRESSION
+    # ========================================================
+
+    final_detections = suppress_duplicate_detections(
+        final_detections,
+        iou_threshold=0.75
+    )
+
 
     # ========================================================
     # SORT FINAL FRUITS BY CONFIDENCE

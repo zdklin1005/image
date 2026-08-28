@@ -1,6 +1,193 @@
 import cv2
 import numpy as np
 
+def select_otsu_foreground_mask(
+    normal_mask,
+    inverted_mask,
+    default_mask="normal"
+):
+    """
+    Choose whether the normal or inverted Otsu mask
+    is more likely to represent the detected fruit.
+
+    Since this function is used on a YOLO fruit ROI,
+    the target fruit is expected to occupy more of
+    the centre than the outer border.
+
+    Parameters
+    ----------
+    normal_mask : np.ndarray
+        Otsu result using THRESH_BINARY.
+
+    inverted_mask : np.ndarray
+        Otsu result using THRESH_BINARY_INV.
+
+    default_mask : str
+        Fallback polarity when both candidates
+        receive very similar scores.
+
+    Returns
+    -------
+    selected_mask : np.ndarray
+        Binary mask whose polarity is more likely
+        to represent the fruit foreground.
+
+    selected_polarity : str
+        "normal" or "inverted".
+    """
+
+    if normal_mask is None or inverted_mask is None:
+        raise ValueError(
+            "Otsu candidate masks cannot be None."
+        )
+
+    if normal_mask.shape != inverted_mask.shape:
+        raise ValueError(
+            "Otsu candidate masks must have "
+            "the same dimensions."
+        )
+
+    height, width = normal_mask.shape[:2]
+
+    # --------------------------------------------------------
+    # Central region
+    #
+    # YOLO should place the fruit approximately around
+    # the centre of its bounding-box ROI.
+    # --------------------------------------------------------
+
+    centre_x1 = int(width * 0.25)
+    centre_x2 = int(width * 0.75)
+
+    centre_y1 = int(height * 0.25)
+    centre_y2 = int(height * 0.75)
+
+    # --------------------------------------------------------
+    # Border region
+    #
+    # Outer 10% of ROI is more likely to contain background.
+    # --------------------------------------------------------
+
+    border_size_x = max(
+        1,
+        int(width * 0.10)
+    )
+
+    border_size_y = max(
+        1,
+        int(height * 0.10)
+    )
+
+    def calculate_mask_score(mask):
+
+        foreground = mask > 0
+
+        centre_region = foreground[
+            centre_y1:centre_y2,
+            centre_x1:centre_x2
+        ]
+
+        centre_ratio = np.mean(
+            centre_region
+        )
+
+        # Create border selection
+        border_region = np.zeros(
+            foreground.shape,
+            dtype=bool
+        )
+
+        border_region[
+            :border_size_y,
+            :
+        ] = True
+
+        border_region[
+            height - border_size_y:,
+            :
+        ] = True
+
+        border_region[
+            :,
+            :border_size_x
+        ] = True
+
+        border_region[
+            :,
+            width - border_size_x:
+        ] = True
+
+        border_ratio = np.mean(
+            foreground[
+                border_region
+            ]
+        )
+
+        # Fruit should preferably be white near
+        # the centre and less white at the border.
+        score = (
+            centre_ratio
+            - border_ratio
+        )
+
+        return (
+            float(score),
+            float(centre_ratio),
+            float(border_ratio)
+        )
+
+    (
+        normal_score,
+        normal_centre,
+        normal_border
+    ) = calculate_mask_score(
+        normal_mask
+    )
+
+    (
+        inverted_score,
+        inverted_centre,
+        inverted_border
+    ) = calculate_mask_score(
+        inverted_mask
+    )
+
+    # --------------------------------------------------------
+    # Select polarity
+    # --------------------------------------------------------
+
+    score_difference = abs(
+        normal_score - inverted_score
+    )
+
+    # If the result is ambiguous, preserve the
+    # previously expected polarity.
+    if score_difference < 0.05:
+
+        if default_mask == "inverted":
+
+            selected_mask = inverted_mask
+            selected_polarity = "inverted"
+
+        else:
+
+            selected_mask = normal_mask
+            selected_polarity = "normal"
+
+    elif inverted_score > normal_score:
+
+        selected_mask = inverted_mask
+        selected_polarity = "inverted"
+
+    else:
+
+        selected_mask = normal_mask
+        selected_polarity = "normal"
+
+    return (
+        selected_mask,
+        selected_polarity
+    )
 
 def segment_fruit_otsu(image):
     """
@@ -53,11 +240,32 @@ def segment_fruit_otsu(image):
     # Inverted because:
     # darker fruit      -> white foreground
     # bright background -> black background
-    gray_threshold, gray_mask = cv2.threshold(
+    # Calculate Otsu threshold using both possible
+    # foreground polarities.
+
+    gray_threshold, gray_normal_mask = cv2.threshold(
         gray_image,
         0,
         255,
-        cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
+        cv2.THRESH_BINARY + cv2.THRESH_OTSU
+    )
+
+    _, gray_inverted_mask = cv2.threshold(
+        gray_image,
+        gray_threshold,
+        255,
+        cv2.THRESH_BINARY_INV
+    )
+
+    (
+        gray_mask,
+        gray_polarity
+    ) = select_otsu_foreground_mask(
+        gray_normal_mask,
+        gray_inverted_mask,
+
+        # Preserve previous behaviour when ambiguous
+        default_mask="inverted"
     )
 
     # ============================================================
@@ -75,11 +283,41 @@ def segment_fruit_otsu(image):
     # Normal binary is used because:
     # colourful/saturated fruit      -> white foreground
     # low-saturation white background -> black background
-    saturation_threshold, saturation_mask = cv2.threshold(
+    saturation_threshold, saturation_normal_mask = (
+        cv2.threshold(
+            saturation_image,
+            0,
+            255,
+            cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        )
+    )
+
+    _, saturation_inverted_mask = cv2.threshold(
         saturation_image,
-        0,
+        saturation_threshold,
         255,
-        cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        cv2.THRESH_BINARY_INV
+    )
+
+    (
+        saturation_mask,
+        saturation_polarity
+    ) = select_otsu_foreground_mask(
+        saturation_normal_mask,
+        saturation_inverted_mask,
+
+        # Preserve previous behaviour when ambiguous
+        default_mask="normal"
+    )
+
+    print(
+        f"Grayscale Otsu polarity : "
+        f"{gray_polarity}"
+    )
+
+    print(
+        f"Saturation Otsu polarity: "
+        f"{saturation_polarity}"
     )
 
     return (
