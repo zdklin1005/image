@@ -68,6 +68,35 @@ def add_letterbox_padding(
     return standardised_image
 
 
+def create_valid_content_mask(
+    output_size,
+    resize_padding,
+):
+    # Create a binary mask separating image content from padding
+    output_width, output_height = output_size
+
+    (
+        left_padding,
+        top_padding,
+        right_padding,
+        bottom_padding,
+    ) = resize_padding
+
+    valid_content_mask = np.zeros(
+        (output_height, output_width),
+        dtype=np.uint8,
+    )
+
+    x1 = left_padding
+    y1 = top_padding
+    x2 = output_width - right_padding
+    y2 = output_height - bottom_padding
+
+    valid_content_mask[y1:y2, x1:x2] = 255
+
+    return valid_content_mask
+
+
 def calculate_blur_score(image, reference_width=256):
     #Calculate a size-normalised variance-of-Laplacian blur score.
     image_height, image_width = image.shape[:2]
@@ -248,6 +277,18 @@ def preprocess_fruit_image(
         output_size,
     )
 
+    valid_content_mask = create_valid_content_mask(
+        output_size,
+        resize_padding,
+    )
+
+    valid_content_bbox = (
+        resize_padding[0],
+        resize_padding[1],
+        output_size[0] - resize_padding[2],
+        output_size[1] - resize_padding[3],
+    )
+
     return {
         "original_image": original_standardised,
         "median_image": median_standardised,
@@ -259,6 +300,8 @@ def preprocess_fruit_image(
         "resize_scale": resize_scale,
         "resize_padding": resize_padding,
         "output_size": output_size,
+        "valid_content_mask": valid_content_mask,
+        "valid_content_bbox": valid_content_bbox,
         "blur_score": blur_score,
         "is_blurry": is_blurry,
         **quality_metrics,
