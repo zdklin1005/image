@@ -4,8 +4,8 @@ True,Ripe,Apple,Apple,Ripe,True,,Ripe,C:\Users\Kai\Documents\Image Processing\as
 False,Unripe,Apple,Apple,Ripe,False,,Unripe,C:\Users\Kai\Documents\Image Processing\assgm\archive (1)\Ripe Apple\_MG_8993_07_jpg.rf.9313f3115540e2ce479f80db3015a636.jpg,,False,,evaluated
 True,Ripe,Apple,Apple,Ripe,True,Ripe,Ripe,C:\Users\Kai\Documents\Image Processing\assgm\archive (1)\Ripe Apple\citra98_jpg.rf.47fe97bc9c1d75048448f69ed3794f20.jpg,Apple,True,Ripe,evaluated
 True,Ripe,Apple,Apple,Ripe,True,Ripe,Ripe,C:\Users\Kai\Documents\Image Processing\assgm\archive (1)\Ripe Apple\r0_248_jpg.rf.d6e968c25146c7aa1da74afd25cdb533.jpg,Apple,True,Ripe,evaluated
-True,Ripe,Apple,Apple,Ripe,True,Ripe,Ripe,C:\Users\Kai\Documents\Image Processing\assgm\archive (1)\Ripe Apple\r1_192_jpg.rf.998f86f9fa17ed7effd14f618ec55e33.jpg,Apple,True,Ripe,evaluated
-True,Ripe,Apple,Apple,Ripe,True,,Ripe,C:\Users\Kai\Documents\Image Processing\assgm\archive (1)\Ripe Apple\resized_image_3089_jpg.rf.2f9f801ac25aa11cfdd963c906d39b2d.jpg,,False,,evaluated
+,,Watermelon,Apple,Ripe,,,,C:\Users\Kai\Documents\Image Processing\assgm\archive (1)\Ripe Apple\r1_192_jpg.rf.998f86f9fa17ed7effd14f618ec55e33.jpg,,,,wrong_fruit
+False,Overripe,Apple,Apple,Ripe,False,,Overripe,C:\Users\Kai\Documents\Image Processing\assgm\archive (1)\Ripe Apple\resized_image_3089_jpg.rf.2f9f801ac25aa11cfdd963c906d39b2d.jpg,,False,,evaluated
 True,Ripe,Apple,Apple,Ripe,True,Ripe,Ripe,C:\Users\Kai\Documents\Image Processing\assgm\archive (1)\Ripe Apple\slice_29_7_jpeg_jpg.rf.0601fedd7335d6f51fde904075ac6138.jpg,Apple,True,Ripe,evaluated
 True,Ripe,Apple,Apple,Ripe,True,Ripe,Ripe,C:\Users\Kai\Documents\Image Processing\assgm\archive (1)\Ripe Apple\slice_46_5_jpeg.rf.2d254828922ce5c63b263b5aa093585b.jpg,Apple,True,Ripe,evaluated
 True,Ripe,Apple,Apple,Ripe,True,Ripe,Ripe,C:\Users\Kai\Documents\Image Processing\assgm\archive (1)\Ripe Apple\translation_Screen-Shot-2018-06-08-at-5-08-05-PM_png_jpg.rf.5c4b062d2f5f206fa3dd5e85b91e0501.jpg,Apple,True,Ripe,evaluated
@@ -70,7 +70,7 @@ True,Unripe,Grape,Grape,Unripe,True,Unripe,Unripe,C:\Users\Kai\Documents\Image P
 True,Unripe,Grape,Grape,Unripe,True,Unripe,Unripe,C:\Users\Kai\Documents\Image Processing\assgm\archive (1)\Unripe Grape\c9a6e6c6-346_jpg.rf.30f4012d0d60c524b435b9961236a697.jpg,Grape,True,Unripe,evaluated
 True,Unripe,Grape,Grape,Unripe,True,Unripe,Unripe,C:\Users\Kai\Documents\Image Processing\assgm\archive (1)\Unripe Grape\vine22_jpg.rf.78ac5feb3bf7452adcf496d838ec26a6.jpg,Grape,True,Unripe,evaluated
 ,,Grape,Mango,Unripe,,,,C:\Users\Kai\Documents\Image Processing\assgm\archive (1)\Unripe Mango\Raw_Mango-002bda5c-ebdb-11ed-9978-346f24e2fa38_jpg.rf.69c2d959d3598360ad247fa1fa76c0b0.jpg,,,,wrong_fruit
-,,Apple,Mango,Unripe,,,,C:\Users\Kai\Documents\Image Processing\assgm\archive (1)\Unripe Mango\Raw_Mango-23130ced-ebdb-11ed-bdad-346f24e2fa38_jpg.rf.1ab1befa54996a6860846e6c1d303843.jpg,,,,wrong_fruit
+,,Grape,Mango,Unripe,,,,C:\Users\Kai\Documents\Image Processing\assgm\archive (1)\Unripe Mango\Raw_Mango-23130ced-ebdb-11ed-bdad-346f24e2fa38_jpg.rf.1ab1befa54996a6860846e6c1d303843.jpg,,,,wrong_fruit
 ,,Apple,Mango,Unripe,,,,C:\Users\Kai\Documents\Image Processing\assgm\archive (1)\Unripe Mango\Raw_Mango-44c4ee22-ebdb-11ed-8972-346f24e2fa38_jpg.rf.caf8083628219c4472ace9b3f75d1b5a.jpg,,,,wrong_fruit
 ,,Grape,Mango,Unripe,,,,C:\Users\Kai\Documents\Image Processing\assgm\archive (1)\Unripe Mango\Raw_Mango-667a3a38-ebdb-11ed-8e18-346f24e2fa38_jpg.rf.ed2b98e34cd8c0620410f048c54ab386.jpg,,,,wrong_fruit
 ,,Grape,Mango,Unripe,,,,C:\Users\Kai\Documents\Image Processing\assgm\archive (1)\Unripe Mango\Raw_Mango-8862b7de-ebcf-11ed-9179-346f24e2fa38_jpg.rf.0de2789eae9494210a75b35d92f37c1a.jpg,,,,wrong_fruit

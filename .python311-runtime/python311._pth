@@ -1,0 +1,6 @@
+python311.zip
+.
+..
+..\.venv\Lib\site-packages
+
+import site

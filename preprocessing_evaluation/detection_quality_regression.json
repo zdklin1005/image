@@ -1,9 +1,9 @@
 {
   "single_fruit_images": 140,
-  "baseline_correct": 117,
-  "candidate_correct": 117,
-  "baseline_accuracy": 0.8357142857142857,
-  "candidate_accuracy": 0.8357142857142857,
+  "baseline_correct": 113,
+  "candidate_correct": 113,
+  "baseline_accuracy": 0.8071428571428572,
+  "candidate_accuracy": 0.8071428571428572,
   "external_expected_class_instances": 17,
   "baseline_external_class_hits": 6,
   "candidate_external_class_hits": 7,

@@ -65,6 +65,9 @@ def evaluate_image(image_path):
             "class_votes": json.dumps(detection.get("class_votes", {})),
             "reliability_status": detection.get("reliability_status"),
             "box_status": detection.get("box_status"),
+            "support_level": detection.get("support_level"),
+            "ripeness_status": detection.get("ripeness_status"),
+            "defect_status": detection.get("defect_status"),
             "model_c_ripeness": detection.get("model_c_ripeness"),
             "final_ripeness": None,
             "ripeness_confidence": None,
@@ -89,29 +92,34 @@ def evaluate_image(image_path):
             )
             x1, y1, x2, y2 = roi["bounding_box"]
             fruit_roi = analysis_image[y1:y2, x1:x2].copy()
-            result_b = classify_with_model_b(
-                fruit_roi,
-                detection["fruit_type"],
-            )
-            result_e = classify_with_model_e(fruit_roi)
-            final_ripeness = fuse_ripeness(
-                result_b,
-                detection.get("model_c_ripeness"),
-                detection.get("confidence_c"),
-                result_e,
-            )
-            blemish = detect_fruit_blemish(
-                roi["roi_image"],
-                roi["fruit_mask"],
-                detection["fruit_type"],
-            )
+            row["fruit_area_pixels"] = roi["fruit_area_pixels"]
 
-            row.update({
-                "final_ripeness": final_ripeness["ripeness"],
-                "ripeness_confidence": final_ripeness["confidence"],
-                "fruit_area_pixels": roi["fruit_area_pixels"],
-                "blemish_percentage": blemish["blemish_percentage"],
-            })
+            if detection.get("ripeness_supported", False):
+                result_b = classify_with_model_b(
+                    fruit_roi,
+                    detection["fruit_type"],
+                )
+                result_e = classify_with_model_e(fruit_roi)
+                final_ripeness = fuse_ripeness(
+                    result_b,
+                    detection.get("model_c_ripeness"),
+                    detection.get("confidence_c"),
+                    result_e,
+                )
+                row.update({
+                    "final_ripeness": final_ripeness["ripeness"],
+                    "ripeness_confidence": final_ripeness["confidence"],
+                })
+
+            if detection.get("defect_supported", False):
+                blemish = detect_fruit_blemish(
+                    roi["roi_image"],
+                    roi["fruit_mask"],
+                    detection["fruit_type"],
+                )
+                row["blemish_percentage"] = (
+                    blemish["blemish_percentage"]
+                )
         except Exception as error:
             row["roi_error"] = f"{type(error).__name__}: {error}"
 
@@ -174,6 +182,9 @@ def main():
         "class_votes",
         "reliability_status",
         "box_status",
+        "support_level",
+        "ripeness_status",
+        "defect_status",
         "model_c_ripeness",
         "final_ripeness",
         "ripeness_confidence",

@@ -46,7 +46,20 @@ model_d = YOLO(
 )
 
 
-SUPPORTED_FRUITS = {
+DETECTION_SUPPORTED_FRUITS = {
+    "apple",
+    "banana",
+    "grape",
+    "mango",
+    "melon",
+    "orange",
+    "peach",
+    "pear",
+    "pineapple",
+    "watermelon",
+}
+
+RIPENESS_SUPPORTED_FRUITS = {
     "apple",
     "banana",
     "grape",
@@ -57,6 +70,19 @@ SUPPORTED_FRUITS = {
     "pear",
 }
 
+DEFECT_SUPPORTED_FRUITS = set(
+    RIPENESS_SUPPORTED_FRUITS
+)
+
+MODEL_A_EXTENSION_FRUITS = {
+    "pineapple",
+    "watermelon",
+}
+
+# Backwards-compatible name for code that only checks whether a fruit can be
+# detected. Analysis capabilities are exposed separately below.
+SUPPORTED_FRUITS = DETECTION_SUPPORTED_FRUITS
+
 CLASS_CONFIDENCE_THRESHOLDS = {
     "apple": 0.30,
     "banana": 0.30,
@@ -66,6 +92,8 @@ CLASS_CONFIDENCE_THRESHOLDS = {
     "orange": 0.30,
     "peach": 0.35,
     "pear": 0.35,
+    "pineapple": 0.30,
+    "watermelon": 0.30,
 }
 
 DEFAULT_CLASS_CONFIDENCE_THRESHOLD = 0.50
@@ -101,6 +129,7 @@ def detect_with_model_a(
     image,
     confidence_threshold=0.40,
     apply_class_thresholds=True,
+    allowed_fruits=None,
 ):
     """
     Model A:
@@ -114,6 +143,15 @@ def detect_with_model_a(
     Pineapple
     Watermelon
     """
+
+    allowed_fruit_names = (
+        {
+            normalise_fruit_name(fruit_name)
+            for fruit_name in allowed_fruits
+        }
+        if allowed_fruits is not None
+        else None
+    )
 
     results = model_a.predict(
         source=image,
@@ -136,6 +174,13 @@ def detect_with_model_a(
         fruit_type = str(
             model_a.names[class_id]
         ).strip()
+
+        if (
+            allowed_fruit_names is not None
+            and normalise_fruit_name(fruit_type)
+            not in allowed_fruit_names
+        ):
+            continue
 
         if apply_class_thresholds and confidence < max(
             confidence_threshold,
@@ -482,15 +527,17 @@ def calculate_iou(
 
 def suppress_duplicate_detections(
     detections,
-    iou_threshold=0.75
+    iou_threshold=0.65,
+    same_class_containment_threshold=0.82,
+    cross_class_containment_threshold=0.92,
 ):
     """
-    Remove highly overlapping detections that most
-    likely represent the same physical fruit.
+    Remove final boxes that most likely represent one physical fruit.
 
-    Fruit class is ignored during this final check
-    because different models may assign different
-    classes to the same physical fruit.
+    IoU alone misses a common ensemble case where one model predicts a large
+    box and another predicts a smaller box inside it.  Containment is therefore
+    considered as well, but only when the box centres are closely aligned so
+    neighbouring or partially occluded fruits remain separate.
     """
 
     if not detections:
@@ -528,13 +575,69 @@ def suppress_duplicate_detections(
         is_duplicate = False
 
         for existing in kept:
+            candidate_box = candidate["bounding_box"]
+            existing_box = existing["bounding_box"]
+            overlap = calculate_iou(candidate_box, existing_box)
 
-            overlap = calculate_iou(
-                candidate["bounding_box"],
-                existing["bounding_box"]
+            candidate_x1, candidate_y1, candidate_x2, candidate_y2 = (
+                candidate_box
+            )
+            existing_x1, existing_y1, existing_x2, existing_y2 = (
+                existing_box
+            )
+            intersection_width = max(
+                0,
+                min(candidate_x2, existing_x2)
+                - max(candidate_x1, existing_x1),
+            )
+            intersection_height = max(
+                0,
+                min(candidate_y2, existing_y2)
+                - max(candidate_y1, existing_y1),
+            )
+            intersection_area = intersection_width * intersection_height
+            candidate_width = max(1, candidate_x2 - candidate_x1)
+            candidate_height = max(1, candidate_y2 - candidate_y1)
+            existing_width = max(1, existing_x2 - existing_x1)
+            existing_height = max(1, existing_y2 - existing_y1)
+            smaller_area = min(
+                candidate_width * candidate_height,
+                existing_width * existing_height,
+            )
+            containment = (
+                intersection_area / smaller_area
+                if smaller_area > 0 else 0.0
+            )
+            horizontal_center_distance = abs(
+                (candidate_x1 + candidate_x2) / 2.0
+                - (existing_x1 + existing_x2) / 2.0
+            ) / min(candidate_width, existing_width)
+            vertical_center_distance = abs(
+                (candidate_y1 + candidate_y2) / 2.0
+                - (existing_y1 + existing_y2) / 2.0
+            ) / min(candidate_height, existing_height)
+            centers_are_aligned = (
+                horizontal_center_distance <= 0.50
+                and vertical_center_distance <= 0.50
+            )
+            same_class = normalise_fruit_name(
+                candidate.get("fruit_type", "")
+            ) == normalise_fruit_name(
+                existing.get("fruit_type", "")
+            )
+            containment_threshold = (
+                same_class_containment_threshold
+                if same_class
+                else cross_class_containment_threshold
             )
 
-            if overlap >= iou_threshold:
+            if (
+                overlap >= iou_threshold
+                or (
+                    centers_are_aligned
+                    and containment >= containment_threshold
+                )
+            ):
 
                 is_duplicate = True
                 break
@@ -546,6 +649,84 @@ def suppress_duplicate_detections(
             )
 
     return kept
+
+
+def suppress_detections_contained_by_extension_fruits(
+    detections,
+    minimum_containment=0.92
+):
+    """Remove false core-fruit boxes enclosed by pineapple/watermelon boxes."""
+    extension_detections = [
+        detection
+        for detection in detections
+        if normalise_fruit_name(
+            detection.get("fruit_type", "")
+        ) in MODEL_A_EXTENSION_FRUITS
+    ]
+
+    if not extension_detections:
+        return detections
+
+    filtered_detections = []
+
+    for candidate in detections:
+        candidate_class = normalise_fruit_name(
+            candidate.get("fruit_type", "")
+        )
+
+        if candidate_class in MODEL_A_EXTENSION_FRUITS:
+            filtered_detections.append(candidate)
+            continue
+
+        candidate_x1, candidate_y1, candidate_x2, candidate_y2 = (
+            candidate["bounding_box"]
+        )
+        candidate_width = max(0, candidate_x2 - candidate_x1)
+        candidate_height = max(0, candidate_y2 - candidate_y1)
+        candidate_area = candidate_width * candidate_height
+        candidate_center_x = (candidate_x1 + candidate_x2) / 2.0
+        candidate_center_y = (candidate_y1 + candidate_y2) / 2.0
+        is_contained_duplicate = False
+
+        for extension in extension_detections:
+            extension_x1, extension_y1, extension_x2, extension_y2 = (
+                extension["bounding_box"]
+            )
+            center_is_inside = (
+                extension_x1 <= candidate_center_x <= extension_x2
+                and extension_y1 <= candidate_center_y <= extension_y2
+            )
+
+            intersection_width = max(
+                0,
+                min(candidate_x2, extension_x2)
+                - max(candidate_x1, extension_x1)
+            )
+            intersection_height = max(
+                0,
+                min(candidate_y2, extension_y2)
+                - max(candidate_y1, extension_y1)
+            )
+            intersection_area = (
+                intersection_width * intersection_height
+            )
+            containment = (
+                intersection_area / candidate_area
+                if candidate_area > 0
+                else 0.0
+            )
+
+            if (
+                center_is_inside
+                and containment >= minimum_containment
+            ):
+                is_contained_duplicate = True
+                break
+
+        if not is_contained_duplicate:
+            filtered_detections.append(candidate)
+
+    return filtered_detections
 
 # ============================================================
 # FUSE MODEL A + MODEL C + MODEL D
@@ -654,19 +835,35 @@ def fuse_detections(
                 + detection["confidence"]
             )
 
-        winning_class = max(
-            class_votes,
-            key=lambda fruit_class: (
-                class_votes[fruit_class],
-                max(
-                    detection["confidence"]
-                    for detection in best_by_model.values()
-                    if normalise_fruit_name(
-                        detection["fruit_type"]
-                    ) == fruit_class
-                ),
-            ),
+        model_a_detection = best_by_model.get("A")
+        model_a_class = (
+            normalise_fruit_name(
+                model_a_detection["fruit_type"]
+            )
+            if model_a_detection is not None
+            else None
         )
+
+        # Model A is the only detector trained for pineapple and watermelon.
+        # When it identifies either extension fruit in a spatial group, retain
+        # that class instead of allowing Models C/D (which do not contain those
+        # classes) to relabel it as a visually similar core fruit.
+        if model_a_class in MODEL_A_EXTENSION_FRUITS:
+            winning_class = model_a_class
+        else:
+            winning_class = max(
+                class_votes,
+                key=lambda fruit_class: (
+                    class_votes[fruit_class],
+                    max(
+                        detection["confidence"]
+                        for detection in best_by_model.values()
+                        if normalise_fruit_name(
+                            detection["fruit_type"]
+                        ) == fruit_class
+                    ),
+                ),
+            )
 
         winning_detections = [
             detection
@@ -720,17 +917,51 @@ def fuse_detections(
             model_c_fruit_class == winning_class
             if model_c_fruit_class is not None else False
         )
-        is_supported = winning_class in SUPPORTED_FRUITS
+        is_detection_supported = (
+            winning_class
+            in DETECTION_SUPPORTED_FRUITS
+        )
+        is_ripeness_supported = (
+            winning_class
+            in RIPENESS_SUPPORTED_FRUITS
+        )
+        is_defect_supported = (
+            winning_class
+            in DEFECT_SUPPORTED_FRUITS
+        )
         displayed_fruit_type = (
             winning_class.title()
-            if is_supported else "Unsupported"
+            if is_detection_supported
+            else "Unsupported"
+        )
+        support_level = (
+            "Full analysis"
+            if (
+                is_ripeness_supported
+                and is_defect_supported
+            )
+            else "Detection only"
         )
 
         final_detections.append({
             "model": representative["model"],
             "fruit_type": displayed_fruit_type,
             "detected_fruit_type": winning_class.title(),
-            "is_supported": is_supported,
+            "is_supported": is_detection_supported,
+            "detection_supported": is_detection_supported,
+            "ripeness_supported": is_ripeness_supported,
+            "defect_supported": is_defect_supported,
+            "support_level": support_level,
+            "ripeness_status": (
+                "Available"
+                if is_ripeness_supported
+                else "Not evaluated - detection only"
+            ),
+            "defect_status": (
+                "Available"
+                if is_defect_supported
+                else "Not evaluated - detection only"
+            ),
             "confidence": representative["confidence"],
             "bounding_box": representative["bounding_box"],
             "models": model_order,
@@ -751,7 +982,7 @@ def fuse_detections(
                 if (
                     model_c_detection is not None
                     and model_c_matches_final
-                    and is_supported
+                    and is_ripeness_supported
                 ) else None
             ),
             "model_c_raw_ripeness": (
@@ -771,6 +1002,16 @@ def fuse_detections(
                 for fruit_class, vote in class_votes.items()
             },
         })
+
+    final_detections = (
+        suppress_detections_contained_by_extension_fruits(
+            final_detections
+        )
+    )
+
+    final_detections = suppress_duplicate_detections(
+        final_detections
+    )
 
     final_detections.sort(
         key=lambda detection: detection["confidence"],
