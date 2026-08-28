@@ -46,6 +46,18 @@ def init_db():
             role TEXT NOT NULL DEFAULT 'client'
         )
     """)
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id INTEGER,
+            timestamp TEXT NOT NULL,
+            created_by TEXT,
+            rating TEXT NOT NULL,
+            comment TEXT,
+            FOREIGN KEY (run_id) REFERENCES runs(id)
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -71,7 +83,8 @@ def set_role(email: str, role: str) -> None:
     conn.close()
 
 
-def add_run(created_by: str, fruit_count: int, avg_confidence: float, processing_time_ms: float) -> None:
+def add_run(created_by: str, fruit_count: int, avg_confidence: float, processing_time_ms: float) -> int:
+    """Returns the new run's id, so feedback can be linked to it."""
     conn = get_connection()
     c = conn.cursor()
     c.execute(
@@ -88,7 +101,49 @@ def add_run(created_by: str, fruit_count: int, avg_confidence: float, processing
         ),
     )
     conn.commit()
+    run_id = c.lastrowid
     conn.close()
+    return run_id
+
+
+def add_feedback(run_id: int, created_by: str, rating: str, comment: str) -> None:
+    """rating should be 'good' or 'bad'."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute(
+        """
+        INSERT INTO feedback (run_id, timestamp, created_by, rating, comment)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            run_id,
+            datetime.datetime.now().isoformat(timespec="seconds"),
+            created_by,
+            rating,
+            comment,
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_feedback_history() -> pd.DataFrame:
+    """Returns all feedback, joined with basic run info, newest first."""
+    conn = get_connection()
+    df = pd.read_sql_query(
+        """
+        SELECT
+            feedback.id, feedback.timestamp, feedback.created_by,
+            feedback.rating, feedback.comment,
+            runs.fruit_count, runs.avg_confidence
+        FROM feedback
+        LEFT JOIN runs ON feedback.run_id = runs.id
+        ORDER BY feedback.id DESC
+        """,
+        conn,
+    )
+    conn.close()
+    return df
 
 
 def get_run_history(created_by: str = None) -> pd.DataFrame:

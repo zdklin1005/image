@@ -1,5 +1,6 @@
 """
-New Fruit Analysis - Upload an image and run fruit detection + ripeness classification.
+New Fruit Analysis - Upload an image and run the full detection +
+ripeness + blemish pipeline.
 """
 
 import pathlib
@@ -11,29 +12,45 @@ import pandas as pd
 import numpy as np
 import cv2
 
-from db import add_run
-from fruit_ripeness_object_detection.detection import detect_fruit_ripeness, draw_detections
+from db import add_run, add_feedback
+import pipeline
 import adapter
 
 # ---------------------------------------------------------
-# BACKEND: fruit detection + ripeness classification
+# BACKEND
 # ---------------------------------------------------------
 
-def process_image(image: Image.Image, confidence_threshold: float):
+def process_image(
+    image: Image.Image,
+    conf_a: float,
+    conf_c: float,
+    conf_d: float,
+    iou_threshold: float,
+):
     cv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-    detections = detect_fruit_ripeness(cv_image, confidence_threshold=confidence_threshold)
-    annotated_cv = draw_detections(cv_image, detections)
+    results, annotated_cv = pipeline.analyze_image(
+        cv_image,
+        confidence_threshold_a=conf_a,
+        confidence_threshold_c=conf_c,
+        confidence_threshold_d=conf_d,
+        iou_threshold=iou_threshold,
+    )
     annotated_image = Image.fromarray(cv2.cvtColor(annotated_cv, cv2.COLOR_BGR2RGB))
-    return annotated_image, detections
+    return annotated_image, results
 
 
-def get_metrics(detections: list) -> dict:
-    if not detections:
-        return {"count": 0, "avg_confidence": 0.0}
-    confidences = [d["confidence"] for d in detections]
+def get_metrics(results: list) -> dict:
+    if not results:
+        return {"count": 0, "avg_confidence": 0.0, "avg_blemish_pct": 0.0}
+
+    det_conf = [r["detection_confidence"] for r in results]
+    blemish_vals = [
+        r["blemish_percentage"] for r in results if r["blemish_percentage"] is not None
+    ]
     return {
-        "count": len(detections),
-        "avg_confidence": sum(confidences) / len(confidences),
+        "count": len(results),
+        "avg_confidence": sum(det_conf) / len(det_conf),
+        "avg_blemish_pct": (sum(blemish_vals) / len(blemish_vals)) if blemish_vals else 0.0,
     }
 
 
@@ -54,8 +71,18 @@ if uploaded:
     original = Image.open(uploaded).convert("RGB")
 
     st.sidebar.header("Controls")
-    confidence_threshold = st.sidebar.slider("Confidence threshold", 0.0, 1.0, 0.40, 0.05)
+    confidence_threshold = st.sidebar.slider(
+        "Detection confidence threshold", 0.0, 1.0, 0.40, 0.05,
+        help="Applied to Models A and C. Model D uses a slightly lower threshold by default.",
+    )
     use_preprocessing = st.sidebar.checkbox("Use preprocessed image for detection", value=True)
+
+    with st.sidebar.expander("Advanced"):
+        conf_d = st.slider("Model D confidence threshold", 0.0, 1.0, 0.30, 0.05)
+        iou_threshold = st.slider(
+            "Fusion IoU threshold", 0.0, 1.0, 0.30, 0.05,
+            help="How much bounding-box overlap is required to treat detections from different models as the same physical fruit.",
+        )
 
     suffix = pathlib.Path(uploaded.name).suffix or ".jpg"
     stages = run_stages_1_2(uploaded.getvalue(), suffix)
@@ -69,7 +96,9 @@ if uploaded:
     )
 
     start = time.time()
-    annotated, detections = process_image(detect_input, confidence_threshold)
+    annotated, results = process_image(
+        detect_input, confidence_threshold, confidence_threshold, conf_d, iou_threshold
+    )
     elapsed_ms = (time.time() - start) * 1000
 
     col1, col2 = st.columns(2)
@@ -81,20 +110,36 @@ if uploaded:
     st.divider()
     st.subheader("Detections")
 
-    metrics = get_metrics(detections)
+    metrics = get_metrics(results)
 
-    m1, m2, m3 = st.columns(3)
+    m1, m2, m3, m4 = st.columns(4)
     m1.metric("Fruits detected", metrics["count"])
     m2.metric("Avg. confidence", f"{metrics['avg_confidence']*100:.1f}%")
-    m3.metric("Time", f"{elapsed_ms:.0f} ms")
+    m3.metric("Avg. blemish", f"{metrics['avg_blemish_pct']:.1f}%")
+    m4.metric("Time", f"{elapsed_ms:.0f} ms")
 
-    if detections:
-        st.dataframe(
-            pd.DataFrame(detections)[["fruit_type", "ripeness", "confidence"]],
-            use_container_width=True,
-        )
+    if results:
+        table = pd.DataFrame(results)[
+            ["fruit_type", "ripeness", "ripeness_confidence", "detection_confidence", "blemish_percentage", "agreement"]
+        ]
+        st.dataframe(table, use_container_width=True)
 
-    with st.expander("Pipeline stages"):
+        with st.expander("Per-fruit detail"):
+            for i, r in enumerate(results, start=1):
+                st.markdown(f"**Fruit {i}: {r['fruit_type']} ({r['ripeness']})**")
+                c1, c2 = st.columns(2)
+                c1.image(cv2.cvtColor(r["crop"], cv2.COLOR_BGR2RGB), caption="Crop")
+                if r["blemish_overlay"] is not None:
+                    c2.image(
+                        cv2.cvtColor(r["blemish_overlay"], cv2.COLOR_BGR2RGB),
+                        caption=f"Blemish overlay ({r['blemish_percentage']:.1f}%)",
+                    )
+                else:
+                    c2.caption("Blemish detection unavailable for this crop.")
+                st.caption(f"Detected by: {r['agreement']}")
+                st.divider()
+
+    with st.expander("Pipeline stages (whole image)"):
         s1, s2, s3, s4 = st.columns(4)
         s1.image(adapter.to_rgb(stages["working_image"]), caption="Preprocessed")
         s2.image(stages["gray_mask"], caption=f"Otsu gray ({stages['gray_threshold']:.0f})")
@@ -102,9 +147,27 @@ if uploaded:
         s4.image(stages["fruit_mask"], caption="Refined mask")
         st.caption(f"Projected fruit area: {stages['fruit_area_pixels']:,} px²")
 
-    if st.button("Save this run to history"):
-        add_run(st.session_state.user_email, metrics["count"], metrics["avg_confidence"], elapsed_ms)
-        st.success("Run saved. Check the Dashboard or Analysis History page for it.")
+    st.divider()
+    st.subheader("How did the model do on this run?")
+
+    with st.form("feedback_form"):
+        rating_label = st.radio(
+            "Rating",
+            ["👍 Good", "👎 Bad"],
+            horizontal=True,
+            label_visibility="collapsed",
+        )
+        comment = st.text_area(
+            "Comments (optional)",
+            placeholder="e.g. missed a fruit in the corner, ripeness looked wrong, blemish % seemed too high...",
+        )
+        save_submitted = st.form_submit_button("Save this run to history")
+
+    if save_submitted:
+        rating = "good" if rating_label == "👍 Good" else "bad"
+        run_id = add_run(st.session_state.user_email, metrics["count"], metrics["avg_confidence"], elapsed_ms)
+        add_feedback(run_id, st.session_state.user_email, rating, comment)
+        st.success("Run and feedback saved. Check Analysis History or Dashboard for it.")
 
     st.caption("See **Analysis History** in the sidebar for past runs.")
 

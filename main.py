@@ -5,6 +5,10 @@ from preprocessing import (
     preprocess_fruit_image
 )
 
+from calibration_segmentation.roi_processing import (
+    process_fruit_roi
+)
+
 from calibration_segmentation.calibration import (
     calibrate_image
 )
@@ -16,6 +20,10 @@ from calibration_segmentation.segmentation import (
     apply_watershed_segmentation
 )
 
+from calibration_segmentation.feature_extraction import (
+    extract_colour_features
+)
+
 from calibration_segmentation.measurement import (
     extract_main_fruit,
     calculate_projected_area_cm2
@@ -23,12 +31,23 @@ from calibration_segmentation.measurement import (
 
 from calibration_segmentation.visualisation import (
     display_results,
+    display_roi_results,
     save_results
 )
 
-from fruit_ripeness_object_detection.detection import (
-    detect_fruit_ripeness,
-    draw_detections
+from fruit_ripeness_object_detection.fruit_detection import (
+    detect_with_model_a,
+    detect_with_model_c,
+    detect_with_model_d,
+    fuse_detections,
+    draw_final_detections,
+    crop_all_detected_fruits
+)
+
+from fruit_ripeness_object_detection.ripeness_classification import (
+    classify_with_model_b,
+    classify_with_model_e,
+    fuse_ripeness
 )
 
 from fruit_ripeness_object_detection.blemish import (
@@ -193,6 +212,213 @@ def run_fruit_assessment(
 
 
     # ========================================================
+    # MEMBER 3: FRUIT DETECTION
+    # ========================================================
+    # Model A
+    detections_a = detect_with_model_a(
+        classification_image,
+        confidence_threshold=0.30
+    )
+
+    # Model C
+    detections_c = detect_with_model_c(
+        classification_image,
+        confidence_threshold=0.30
+    )
+
+    # Model D
+    detections_d = detect_with_model_d(
+        classification_image,
+        confidence_threshold=0.30
+    )
+
+    # ========================================================
+    # RAW DETECTION COUNTS
+    # ========================================================
+    print("\nRaw Model Detection Counts")
+    print("------------------------------")
+
+    print(
+        f"Model A : "
+        f"{len(detections_a)}"
+    )
+
+    print(
+        f"Model C : "
+        f"{len(detections_c)}"
+    )
+
+    print(
+        f"Model D : "
+        f"{len(detections_d)}"
+    )
+
+    # ========================================================
+    # FUSE MODEL A + MODEL C + MODEL D
+    # ========================================================
+
+    final_detections = fuse_detections(
+        detections_a,
+        detections_c,
+        detections_d,
+        iou_threshold=0.30
+    )
+
+    # ========================================================
+    # FRUIT DETECTION RESULTS
+    # ========================================================
+    print("\nFruit Detection")
+    print("------------------------------")
+
+    if len(final_detections) == 0:
+
+        print("No fruit detected.")
+
+        detection_image = (
+            classification_image.copy()
+        )
+
+        fruit_crops = []
+
+    else:
+
+        print(
+            f"Total fruits detected: "
+            f"{len(final_detections)}"
+        )
+
+        for index, detection in enumerate(
+            final_detections,
+            start=1
+        ):
+
+            print(
+                f"\nFruit {index}"
+            )
+
+            print(
+                f"Fruit      : "
+                f"{detection['fruit_type']}"
+            )
+
+            print(
+                f"Confidence : "
+                f"{detection['confidence'] * 100:.2f}%"
+            )
+
+            print(
+                f"Bounding box : "
+                f"{detection['bounding_box']}"
+            )
+
+            print(
+                f"Agreement   : "
+                f"{detection['agreement']}"
+            )
+
+            if "iou" in detection:
+
+                print(
+                    f"Model IoU   : "
+                    f"{detection['iou']:.2f}"
+                )
+
+        # ====================================================
+        # DRAW ALL FRUIT BOXES
+        # ====================================================
+
+        detection_image = (
+            draw_final_detections(
+                classification_image,
+                final_detections
+            )
+        )
+
+        # ====================================================
+        # CROP ALL FRUITS
+        # ====================================================
+
+        fruit_crops = (
+            crop_all_detected_fruits(
+                classification_image,
+                final_detections,
+                margin_ratio=0.10
+            )
+        )
+    
+    # ========================================================
+    # FRUIT DETECTION
+    # ========================================================
+    display_detection_image = resize_for_display(
+        detection_image
+    )
+
+    cv2.namedWindow(
+        "Fruit Detection",
+        cv2.WINDOW_NORMAL
+    )
+
+    detection_height, detection_width = (
+        display_detection_image.shape[:2]
+    )
+
+    cv2.resizeWindow(
+        "Fruit Detection",
+        detection_width,
+        detection_height
+    )
+
+    cv2.imshow(
+        "Fruit Detection",
+        display_detection_image
+    )
+
+
+    # ========================================================
+    # SHOW ALL DETECTED FRUIT CROPS
+    # ========================================================
+    for fruit_crop_result in fruit_crops:
+
+        fruit_index = (
+            fruit_crop_result["index"]
+        )
+
+        fruit_type = (
+            fruit_crop_result[
+                "fruit_type"
+            ]
+        )
+
+        crop_image = (
+            fruit_crop_result[
+                "crop"
+            ]
+        )
+
+        window_name = (
+            f"Fruit {fruit_index} - "
+            f"{fruit_type}"
+        )
+
+        cv2.namedWindow(
+            window_name,
+            cv2.WINDOW_NORMAL
+        )
+
+        cv2.imshow(
+            window_name,
+            crop_image
+        )
+
+
+    print(
+        "\nPress any key on the Fruit Detection window to continue."
+    )
+
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+    # ========================================================
     # MEMBER 2: CALIBRATION
     # ========================================================
 
@@ -272,11 +498,6 @@ def run_fruit_assessment(
     ) = segment_fruit_otsu(
         working_image
     )
-    combined_mask = combine_otsu_masks_constrained(
-        gray_mask,
-        saturation_mask,
-        expansion_kernel_size = 9
-    )
 
     print("\nOtsu Segmentation")
     print("------------------------------")
@@ -293,15 +514,70 @@ def run_fruit_assessment(
 
 
     # ========================================================
-    # TECHNIQUE 5: MORPHOLOGICAL REFINEMENT
+    # TECHNIQUE 5: SEPARATE MORPHOLOGICAL REFINEMENT
     # ========================================================
 
-    opened_mask, refined_mask = (
-        refine_fruit_mask(
-            combined_mask,
-            opening_kernel_size=3,
-            closing_kernel_size=5
-        )
+    # Refine grayscale Otsu mask separately
+    (
+        gray_opened_mask,
+        gray_refined_mask
+    ) = refine_fruit_mask(
+        gray_mask,
+        opening_kernel_size=3,
+        closing_kernel_size=5
+    )
+
+
+    # Refine saturation Otsu mask separately
+    (
+        saturation_opened_mask,
+        saturation_refined_mask
+    ) = refine_fruit_mask(
+        saturation_mask,
+        opening_kernel_size=3,
+        closing_kernel_size=5
+    )
+
+
+    # ========================================================
+    # TECHNIQUE 5.1: COMBINE REFINED OTSU MASKS
+    # ========================================================
+
+    combined_mask = combine_otsu_masks_constrained(
+        gray_refined_mask,
+        saturation_refined_mask,
+        expansion_kernel_size=9
+    )
+
+
+    # Final light refinement after combination
+    (
+        opened_mask,
+        refined_mask
+    ) = refine_fruit_mask(
+        combined_mask,
+        opening_kernel_size=3,
+        closing_kernel_size=5
+    )
+
+    print("\nMorphological Refinement")
+    print("------------------------------")
+
+    print(
+        "Grayscale mask refined separately."
+    )
+
+    print(
+        "Saturation mask refined separately."
+    )
+
+    print(
+        "Refined masks combined using "
+        "constrained mask combination."
+    )
+
+    print(
+        "Final combined mask refined."
     )
 
 
@@ -360,6 +636,53 @@ def run_fruit_assessment(
     ) = extract_main_fruit(
         measurement_mask
     )
+    # ========================================================
+    # TECHNIQUE 8: Colour preserve and feature extraction
+    # ========================================================
+
+    fruit_only_colour = cv2.bitwise_and(
+        working_image,
+        working_image,
+        mask=fruit_mask
+    )
+
+    colour_features = extract_colour_features(
+        working_image,
+        fruit_mask
+    )
+
+    print("\nFruit Colour Features")
+    print("------------------------------")
+
+    print(
+        f"Mean Red        : "
+        f"{colour_features['mean_red']:.2f}"
+    )
+
+    print(
+        f"Mean Green      : "
+        f"{colour_features['mean_green']:.2f}"
+    )
+
+    print(
+        f"Mean Blue       : "
+        f"{colour_features['mean_blue']:.2f}"
+    )
+
+    print(
+        f"Dominant Hue    : "
+        f"{colour_features['dominant_hue']}"
+    )
+
+    print(
+        f"Mean Saturation : "
+        f"{colour_features['mean_saturation']:.2f}"
+    )
+
+    print(
+        f"Mean Value      : "
+        f"{colour_features['mean_value']:.2f}"
+    )
 
     print("\nFruit Measurement")
     print("------------------------------")
@@ -393,107 +716,568 @@ def run_fruit_assessment(
             "Not available"
         )
 
+
     # ========================================================
-    # MEMBER 3: FRUIT DETECTION AND RIPENESS CLASSIFICATION
+    # MEMBER 2: ROI-BASED SEGMENTATION
     # ========================================================
+    roi_results = []
 
-    segmented_fruit_image = cv2.bitwise_and(
-        working_image,
-        working_image,
-        mask=fruit_mask
-    )
-
-    detections = detect_fruit_ripeness(
-        segmented_fruit_image,
-        confidence_threshold=0.40
-    )
-
-    detection_image = draw_detections(
-        segmented_fruit_image,
-        detections
-    )
-
-    print("\nFruit Detection and Ripeness")
+    print("\nROI Fruit Processing")
     print("------------------------------")
 
-    if len(detections) == 0:
-        print("No fruit detected.")
+    if len(final_detections) == 0:
+
+        print(
+            "Skipped - no fruit detections available."
+        )
 
     else:
+
         for index, detection in enumerate(
-            detections,
+            final_detections,
             start=1
         ):
 
-            print(
-                f"Detection {index}"
-            )
+            try:
 
-            print(
-                f"Fruit      : "
-                f"{detection['fruit_type']}"
-            )
+                roi_result = process_fruit_roi(
+                    working_image,
+                    detection[
+                        "bounding_box"
+                    ],
+                    use_watershed=False
+                )
 
-            print(
-                f"Ripeness   : "
-                f"{detection['ripeness']}"
-            )
+                # ============================================
+                # ATTACH FRUIT DETECTION INFORMATION
+                # ============================================
 
-            print(
-                f"Confidence : "
-                f"{detection['confidence'] * 100:.2f}%"
-            )
+                roi_result[
+                    "fruit_index"
+                ] = index
 
-            print(
-                f"Bounding box : "
-                f"{detection['bounding_box']}\n"
-            )
+                roi_result[
+                    "fruit_type"
+                ] = detection[
+                    "fruit_type"
+                ]
+
+                roi_result[
+                    "detection_model"
+                ] = detection[
+                    "agreement"
+                ]
+
+                roi_result[
+                    "detection_confidence"
+                ] = detection[
+                    "confidence"
+                ]
+
+                # Save Model C ripeness for later.
+                # Do not use as final ripeness yet.
+                roi_result[
+                    "model_c_ripeness"
+                ] = detection.get(
+                    "model_c_ripeness"
+                )
+
+                roi_results.append(
+                    roi_result
+                )
+
+                roi_colour_features = (
+                    roi_result[
+                        "colour_features"
+                    ]
+                )
+
+                print(
+                    f"\nFruit ROI {index}"
+                )
+
+                print(
+                    f"Fruit        : "
+                    f"{roi_result['fruit_type']}"
+                )
+
+                print(
+                    f"Detection    : "
+                    f"{roi_result['detection_model']}"
+                )
+
+                print(
+                    f"Confidence   : "
+                    f"{roi_result['detection_confidence'] * 100:.2f}%"
+                )
+
+                print(
+                    f"Bounding box : "
+                    f"{roi_result['bounding_box']}"
+                )
+
+                print(
+                    f"ROI area     : "
+                    f"{roi_result['fruit_area_pixels']} "
+                    f"pixels^2"
+                )
+
+                print(
+                    f"Mean Red     : "
+                    f"{roi_colour_features['mean_red']:.2f}"
+                )
+
+                print(
+                    f"Mean Green   : "
+                    f"{roi_colour_features['mean_green']:.2f}"
+                )
+
+                print(
+                    f"Mean Blue    : "
+                    f"{roi_colour_features['mean_blue']:.2f}"
+                )
+
+                print(
+                    f"Dominant Hue : "
+                    f"{roi_colour_features['dominant_hue']}"
+                )
+
+                print(
+                    f"Mean Saturation : "
+                    f"{roi_colour_features['mean_saturation']:.2f}"
+                )
+
+                print(
+                    f"Mean Value      : "
+                    f"{roi_colour_features['mean_value']:.2f}"
+                )
+
+            except ValueError as error:
+
+                print(
+                    f"\nFruit ROI {index} failed:"
+                )
+
+                print(error)
+
 
     # ========================================================
-    # MEMBER 3: BLEMISH ANALYSIS
+    # MEMBER 3: RIPENESS CLASSIFICATION
     # ========================================================
-    blemish_results = None
+    print("\nRipeness Classification\n------------------------------")
 
-    if len(detections) == 0:
+    ripeness_results = []
 
-        print("\nBlemish Analysis")
-        print("------------------------------")
-        print("Skipped - no detected fruit class available.")
+    # Image for final ripeness results
+    ripeness_image = working_image.copy()
+
+    if len(roi_results) == 0:
+        print(
+            "Skipped - no segmented fruit ROIs available."
+        )
 
     else:
-        # Use the highest-confidence detection
-        primary_detection = max(
-            detections,
-            key=lambda detection: detection["confidence"]
-        )
+        for index, roi_result in enumerate(
+            roi_results,
+            start=1
+        ):
 
-        primary_fruit_type = primary_detection[
-            "fruit_type"
-        ]
+            fruit_type = roi_result[
+                "fruit_type"
+            ]
 
-        blemish_results = detect_fruit_blemish(
-            image=working_image,
-            fruit_mask=fruit_mask,
-            fruit_type=primary_fruit_type,
-            opening_kernel_size=3,
-            closing_kernel_size=5,
-            min_component_area=60
-        )
+            bounding_box = roi_result[
+                "bounding_box"
+            ]
 
-        print("\nBlemish Analysis")
-        print("------------------------------")
-        print(
-            f"Fruit type used    : "
-            f"{blemish_results['fruit_type_used']}"
-        )
-        print(
-            f"Blemish area       : "
-            f"{blemish_results['blemish_area_pixels']} pixels^2"
-        )
-        print(
-            f"Blemish Percentage : "
-            f"{blemish_results['blemish_percentage']:.2f}%"
-        )
+            x1, y1, x2, y2 = (
+                bounding_box
+            )
+
+            # =================================================
+            # GET FRUIT ROI
+            # =================================================
+            fruit_roi = working_image[
+                y1:y2,
+                x1:x2
+            ].copy()
+
+            if fruit_roi.size == 0:
+
+                print(
+                    f"Fruit {index}: "
+                    f"invalid ROI."
+                )
+
+                continue
+
+            # =================================================
+            # MODEL B
+            # =================================================
+            result_b = (
+                classify_with_model_b(
+                    fruit_roi,
+                    fruit_type
+                )
+            )
+
+            # =================================================
+            # MODEL E
+            # =================================================
+            result_e = (
+                classify_with_model_e(
+                    fruit_roi
+                )
+            )
+
+            # =================================================
+            # MODEL C RESULT FROM DETECTION STAGE
+            # =================================================
+            model_c_ripeness = (
+                roi_result.get(
+                    "model_c_ripeness"
+                )
+            )
+
+            # Find corresponding final detection
+            detection_index = (
+                roi_result[
+                    "fruit_index"
+                ]
+                - 1
+            )
+
+            final_detection = (
+                final_detections[
+                    detection_index
+                ]
+            )
+
+            model_c_confidence = (
+                final_detection.get(
+                    "confidence_c"
+                )
+            )
+
+            # =================================================
+            # FUSE B + C + E
+            # =================================================
+            final_ripeness = (
+                fuse_ripeness(
+                    result_b,
+                    model_c_ripeness,
+                    model_c_confidence,
+                    result_e
+                )
+            )
+
+            # =================================================
+            # SAVE RESULT
+            # =================================================
+            ripeness_result = {
+                "fruit_index": index,
+
+                "fruit_type": fruit_type,
+
+                "bounding_box": (
+                    bounding_box
+                ),
+
+                "model_b_ripeness": (
+                    result_b[
+                        "ripeness"
+                    ]
+                ),
+
+                "model_b_confidence": (
+                    result_b[
+                        "confidence"
+                    ]
+                ),
+
+                "model_c_ripeness": (
+                    model_c_ripeness
+                ),
+
+                "model_c_confidence": (
+                    model_c_confidence
+                ),
+
+                "model_e_ripeness": (
+                    result_e[
+                        "ripeness"
+                    ]
+                ),
+
+                "model_e_confidence": (
+                    result_e[
+                        "confidence"
+                    ]
+                ),
+
+                "final_ripeness": (
+                    final_ripeness[
+                        "ripeness"
+                    ]
+                ),
+
+                "final_confidence": (
+                    final_ripeness[
+                        "confidence"
+                    ]
+                ),
+
+                "fusion_scores": (
+                    final_ripeness[
+                        "scores"
+                    ]
+                )
+            }
+
+            ripeness_results.append(
+                ripeness_result
+            )
+
+            # Also attach final result back to ROI result.
+            roi_result[
+                "ripeness"
+            ] = final_ripeness[
+                "ripeness"
+            ]
+
+            roi_result[
+                "ripeness_confidence"
+            ] = final_ripeness[
+                "confidence"
+            ]
+
+            # =================================================
+            # PRINT RESULT
+            # =================================================
+            print(
+                f"Fruit {index}"
+            )
+
+            print(
+                f"Fruit Type : "
+                f"{fruit_type}"
+            )
+
+            if result_b.get(
+                "available",
+                False
+            ):
+
+                print(
+                    f"Model B    : "
+                    f"{result_b['ripeness']} "
+                    f"({result_b['confidence'] * 100:.2f}%)"
+                )
+
+            else:
+            
+                print(
+                    "Model B    : "
+                    "Not available for this fruit"
+                )
+
+            if model_c_ripeness is not None:
+                if model_c_confidence is not None:
+                    print(
+                        f"Model C    : "
+                        f"{model_c_ripeness} "
+                        f"({model_c_confidence * 100:.2f}%)"
+                    )
+
+                else:
+                    print(
+                        f"Model C    : "
+                        f"{model_c_ripeness}"
+                    )
+
+            else:
+                print(
+                    "Model C    : "
+                    "Not available for this fruit"
+                )
+
+            print(
+                f"Model E    : "
+                f"{result_e['ripeness']} "
+                f"({result_e['confidence'] * 100:.2f}%)"
+            )
+
+            print(
+                f"Final      : "
+                f"{final_ripeness['ripeness']} "
+                f"({final_ripeness['confidence'] * 100:.2f}%)\n"
+            )
+
+            # =================================================
+            # DRAW FINAL RIPENESS RESULT
+            # =================================================
+
+            final_label = (
+                f"{final_ripeness['ripeness']} "
+                f"{final_ripeness['confidence'] * 100:.2f}%"
+            )
+
+            # Draw fruit bounding box
+            cv2.rectangle(
+                ripeness_image,
+                (x1, y1),
+                (x2, y2),
+                (0, 0, 255),
+                3
+            )
+
+            # Get text size
+            (text_width, text_height), baseline = (
+                cv2.getTextSize(
+                    final_label,
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    2
+                )
+            )
+
+            # Position label above bounding box
+            text_x = x1
+            text_y = max(
+                y1 - 10,
+                text_height + 10
+            )
+
+            # Draw background behind text
+            cv2.rectangle(
+                ripeness_image,
+                (
+                    text_x,
+                    text_y - text_height - 8
+                ),
+                (
+                    text_x + text_width + 8,
+                    text_y + baseline
+                ),
+                (0, 0, 255),
+                -1
+            )
+
+            # Draw final ripeness text
+            cv2.putText(
+                ripeness_image,
+                final_label,
+                (
+                    text_x + 4,
+                    text_y - 4
+                ),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 0, 0),
+                2,
+                cv2.LINE_AA
+            )
+
+#    # ========================================================
+#    # DISPLAY FINAL RIPENESS IMAGE
+#    # ========================================================
+#
+#    if len(ripeness_results) > 0:
+#
+#        display_ripeness_image = resize_for_display(
+#            ripeness_image
+#        )
+#
+#        cv2.namedWindow(
+#            "Final Ripeness Classification",
+#            cv2.WINDOW_NORMAL
+#        )
+#
+#        ripeness_height, ripeness_width = (
+#            display_ripeness_image.shape[:2]
+#        )
+#
+#        cv2.resizeWindow(
+#            "Final Ripeness Classification",
+#            ripeness_width,
+#            ripeness_height
+#        )
+#
+#        cv2.imshow(
+#            "Final Ripeness Classification",
+#            display_ripeness_image
+#        )
+#
+#        print(
+#            "\nPress any key on the Final Ripeness "
+#            "Classification window to continue."
+#        )
+#
+#        cv2.waitKey(0)
+#        cv2.destroyAllWindows()
+
+#    # ========================================================
+#    # MEMBER 3: BLEMISH ANALYSIS
+#    # ========================================================
+#    blemish_results = None
+#
+#    if len(detections) == 0:
+#
+#        print("\nBlemish Analysis")
+#        print("------------------------------")
+#        print("Skipped - no detected fruit class available.")
+#
+#    else:
+#        # Use the highest-confidence detection
+#        primary_detection = max(
+#            detections,
+#            key=lambda detection: detection["confidence"]
+#        )
+#
+#        primary_fruit_type = primary_detection[
+#            "fruit_type"
+#        ]
+#
+#        try:
+#            blemish_results = detect_fruit_blemish(
+#                image=working_image,
+#                fruit_mask=fruit_mask,
+#                fruit_type=primary_fruit_type,
+#                opening_kernel_size=3,
+#                closing_kernel_size=5,
+#                min_component_area=60
+#            )
+#
+#        except (TypeError, ValueError, cv2.error) as error:
+#            print(
+#                "\nBlemish Analysis"
+#            )
+#            print(
+#                "------------------------------"
+#            )
+#            print(
+#                "Skipped - blemish analysis failed:"
+#            )
+#            print(error)
+#
+#            blemish_results = None
+#
+#    if blemish_results is not None:
+#        
+#        print("\nBlemish Analysis")
+#        print("------------------------------")
+#        print(
+#            f"Fruit type used    : "
+#            f"{blemish_results['fruit_type_used']}"
+#        )
+#        print(
+#            f"Blemish area       : "
+#            f"{blemish_results['blemish_area_pixels']} pixels^2"
+#        )
+#        print(
+#            f"Blemish Percentage : "
+#            f"{blemish_results['blemish_percentage']:.2f}%"
+#        )
 
     # ========================================================
     # RETURN RESULTS
@@ -504,11 +1288,17 @@ def run_fruit_assessment(
     "classification_image": classification_image,
     "working_image": working_image,
 
+    "roi_results": roi_results,
+
     "gray_image": gray_image,
     "gray_mask": gray_mask,
+    "gray_opened_mask": gray_opened_mask,
+    "gray_refined_mask": gray_refined_mask,
 
     "saturation_image": saturation_image,
     "saturation_mask": saturation_mask,
+    "saturation_opened_mask": saturation_opened_mask,
+    "saturation_refined_mask": saturation_refined_mask,
 
     "combined_mask": combined_mask,
 
@@ -524,6 +1314,9 @@ def run_fruit_assessment(
 
     "fruit_mask": fruit_mask,
     "fruit_contour": fruit_contour,
+
+    "fruit_only_colour": fruit_only_colour,
+    "colour_features": colour_features,
 
     "fruit_area_pixels": fruit_area_pixels,
     "fruit_area_cm2": fruit_area_cm2,
@@ -544,33 +1337,42 @@ def run_fruit_assessment(
     "resize_padding": resize_padding,
     "output_size": output_size,
 
-    "detections": detections,
+    "detections_a": detections_a,
+    "detections_c": detections_c,
+    "detections_d": detections_d,
+
+    "final_detections": final_detections,
+
+    "fruit_crops": fruit_crops,
+
     "detection_image": detection_image,
 
-    "blemish_mask": (
-        blemish_results["blemish_mask"]
-        if blemish_results is not None else None
-    ),
+    "ripeness_results": ripeness_results,
+    "ripeness_image": ripeness_image,
 
-    "blemish_overlay": (
-        blemish_results["blemish_overlay"]
-        if blemish_results is not None else None
-    ),
-
-    "blemish_area_pixels": (
-        blemish_results["blemish_area_pixels"]
-        if blemish_results is not None else 0
-    ),
-
-    "blemish_percentage": (
-        blemish_results["blemish_percentage"]
-        if blemish_results is not None else 0.0
-    ),
+#    "blemish_mask": (
+#        blemish_results["blemish_mask"]
+#        if blemish_results is not None else None
+#    ),
+#
+#    "blemish_overlay": (
+#        blemish_results["blemish_overlay"]
+#        if blemish_results is not None else None
+#    ),
+#
+#    "blemish_area_pixels": (
+#        blemish_results["blemish_area_pixels"]
+#        if blemish_results is not None else 0
+#    ),
+#
+#    "blemish_percentage": (
+#        blemish_results["blemish_percentage"]
+#        if blemish_results is not None else 0.0
+#    ),
 }
 
 
 if __name__ == "__main__":
-
     # Select Image
     root = Tk()
     root.withdraw()
@@ -579,7 +1381,7 @@ if __name__ == "__main__":
         image_path = filedialog.askopenfilename(
             title="Select Fruit Image",
             filetypes=[
-                ("Image Files", "*.jpg *.jpeg *.png *.bmp"),
+                ("Image Files", "*.jpg *.jpeg *.png *.bmp *.webp"),
                 ("All Files", "*.*")
             ]
         )
@@ -602,70 +1404,95 @@ if __name__ == "__main__":
         calibration_mode=False
     )
 
+    # ========================================================
+    # DISPLAY MEMBER 2 RESULTS
+    # ========================================================
+    
     display_results(results)
+    
+    display_roi_results(
+        results["roi_results"]
+    )
+    
+    # Save results after displaying
     save_results(results)
-
-    print("\nPress any key on an image window to continue to Fruit Ripeness Object Detection.")
-
+    
+    print(
+        "\nPress any key on the image windows to continue to Ripeness Classification."
+    )
+    
     cv2.waitKey(0)
     cv2.destroyAllWindows()
-
-    # Fruit ripeness detection
-    display_detection_image = resize_for_display(
-        results["detection_image"]
-    )
-
-    cv2.namedWindow(
-        "Fruit Detection and Ripeness",
-        cv2.WINDOW_NORMAL
-    )
-
-    height, width = display_detection_image.shape[:2]
-
-    cv2.resizeWindow(
-        "Fruit Detection and Ripeness",
-        width,
-        height
-    )
-
-    cv2.imshow(
-        "Fruit Detection and Ripeness",
-        display_detection_image
-    )
-
-    # Blemish calculation
-    if results["blemish_mask"] is not None:
+    
+    
+    # ========================================================
+    # DISPLAY MEMBER 3 RIPENESS RESULT
+    # ========================================================
+    
+    if len(results["ripeness_results"]) > 0:
+    
+        display_ripeness_image = resize_for_display(
+            results["ripeness_image"]
+        )
+    
         cv2.namedWindow(
-            "Blemish Detection",
+            "Final Ripeness Classification",
             cv2.WINDOW_NORMAL
         )
-
+    
+        ripeness_height, ripeness_width = (
+            display_ripeness_image.shape[:2]
+        )
+    
+        cv2.resizeWindow(
+            "Final Ripeness Classification",
+            ripeness_width,
+            ripeness_height
+        )
+    
         cv2.imshow(
-            "Blemish Detection",
-            results["blemish_mask"]
+            "Final Ripeness Classification",
+            display_ripeness_image
         )
-
-        cv2.namedWindow(
-            "Blemish Overlay",
-            cv2.WINDOW_NORMAL
-        )
-
-        cv2.imshow(
-            "Blemish Overlay",
-            results["blemish_overlay"]
-        )
-
+    
         print(
-            f"\nBlemish Percentage: "
-            f"{results['blemish_percentage']:.2f}%"
+            "\nPress any key on the Final Ripeness Classification window to end the program."
         )
-
-        print("\nPress any key on an image window to exit the program.")
-
+    
         cv2.waitKey(0)
         cv2.destroyAllWindows()
-        
-#    print("\nPress any key on an image window to exit the program.")
+
+
+
+#    # Blemish calculation
+#    if results["blemish_mask"] is not None:
+#        cv2.namedWindow(
+#            "Blemish Detection",
+#            cv2.WINDOW_NORMAL
+#        )
 #
-#    cv2.waitKey(0)
-#    cv2.destroyAllWindows()
+#        cv2.imshow(
+#            "Blemish Detection",
+#            results["blemish_mask"]
+#        )
+#
+#        cv2.namedWindow(
+#            "Blemish Overlay",
+#            cv2.WINDOW_NORMAL
+#        )
+#
+#        cv2.imshow(
+#            "Blemish Overlay",
+#            results["blemish_overlay"]
+#        )
+#
+#        print(
+#            f"\nBlemish Percentage: "
+#            f"{results['blemish_percentage']:.2f}%"
+#        )
+#
+#        print("\nPress any key on an image window to exit the program.")
+#
+#        cv2.waitKey(0)
+#        cv2.destroyAllWindows()
+        

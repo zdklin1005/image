@@ -530,3 +530,113 @@ def apply_watershed_segmentation(
         sure_foreground,
         fruit_labels
     )
+
+def select_watershed_target_region(
+    watershed_markers,
+    fruit_labels
+):
+    """
+    Select the Watershed region that most likely belongs
+    to the YOLO target fruit.
+
+    Priority:
+    1. Region containing the ROI centre.
+    2. Otherwise, region whose centroid is closest
+       to the ROI centre.
+    """
+
+    if watershed_markers is None:
+        raise ValueError(
+            "Watershed markers cannot be None."
+        )
+
+    if not fruit_labels:
+        raise ValueError(
+            "No Watershed fruit labels available."
+        )
+
+    height, width = watershed_markers.shape[:2]
+
+    centre_x = width // 2
+    centre_y = height // 2
+
+    centre_label = int(
+        watershed_markers[
+            centre_y,
+            centre_x
+        ]
+    )
+
+    # ----------------------------------------------------
+    # First choice:
+    # label containing ROI centre
+    # ----------------------------------------------------
+
+    if centre_label in fruit_labels:
+
+        target_label = centre_label
+
+    else:
+
+        target_label = None
+        minimum_distance = None
+
+        # ------------------------------------------------
+        # Fallback:
+        # choose centroid closest to ROI centre
+        # ------------------------------------------------
+
+        for label in fruit_labels:
+
+            region_mask = (
+                watershed_markers == label
+            ).astype(np.uint8)
+
+            moments = cv2.moments(
+                region_mask
+            )
+
+            if moments["m00"] == 0:
+                continue
+
+            centroid_x = (
+                moments["m10"]
+                / moments["m00"]
+            )
+
+            centroid_y = (
+                moments["m01"]
+                / moments["m00"]
+            )
+
+            distance = (
+                (centroid_x - centre_x) ** 2
+                +
+                (centroid_y - centre_y) ** 2
+            )
+
+            if (
+                minimum_distance is None
+                or distance < minimum_distance
+            ):
+                minimum_distance = distance
+                target_label = label
+
+        if target_label is None:
+            raise ValueError(
+                "Unable to select Watershed target region."
+            )
+
+    target_mask = np.zeros(
+        watershed_markers.shape,
+        dtype=np.uint8
+    )
+
+    target_mask[
+        watershed_markers == target_label
+    ] = 255
+
+    return (
+        target_mask,
+        int(target_label)
+    )
