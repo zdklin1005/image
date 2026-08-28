@@ -1,3 +1,7 @@
+import os
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+
 from pathlib import Path
 
 import cv2
@@ -8,7 +12,6 @@ import tensorflow as tf
 # ============================================================
 # MODEL PATHS
 # ============================================================
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 MODEL_B_PATH = (
@@ -27,7 +30,6 @@ MODEL_E_PATH = (
 # ============================================================
 # LOAD MODELS
 # ============================================================
-
 model_b = tf.keras.models.load_model(
     str(MODEL_B_PATH)
 )
@@ -40,17 +42,26 @@ model_e = tf.keras.models.load_model(
 # ============================================================
 # CLASS NAMES
 # ============================================================
-
 # Model B:
 # 2-class ripeness model
 MODEL_B_CLASSES = [
-    "Ripe",
-    "Unripe"
+    "Ripe Apple",
+    "Ripe Banana",
+    "Ripe Dragon Fruit",
+    "Ripe Durian",
+    "Ripe Grape",
+    "Ripe Mango",
+    "Ripe Strawberry",
+    "Unripe Apple",
+    "Unripe Banana",
+    "Unripe Dragon Fruit",
+    "Unripe Durian",
+    "Unripe Grape",
+    "Unripe Mango",
+    "Unripe Strawberry"
 ]
 
-
 # Model E:
-# Based on your Colab training folder order
 MODEL_E_CLASSES = [
     "Overripe",
     "Ripe",
@@ -62,7 +73,6 @@ MODEL_E_CLASSES = [
 # ============================================================
 # PREPARE IMAGE
 # ============================================================
-
 def prepare_ripeness_image(
     image,
     image_size=(224, 224)
@@ -114,16 +124,23 @@ def prepare_ripeness_image(
 # ============================================================
 # MODEL B
 # ============================================================
-
 def classify_with_model_b(
-    fruit_image
+    fruit_image,
+    fruit_type
 ):
     """
-    Model B predicts:
-        Ripe
-        Unripe
+    Model B contains 14 fruit+ripeness classes.
 
-    Model B is coarse supporting evidence.
+    The detected fruit type from Model A/C/D is used
+    to select only the matching Ripe and Unripe
+    probabilities.
+
+    Example:
+        fruit_type = Apple
+
+        Compare:
+            Ripe Apple
+            Unripe Apple
     """
 
     image_array = prepare_ripeness_image(
@@ -135,29 +152,133 @@ def classify_with_model_b(
         verbose=0
     )[0]
 
-    class_index = int(
-        np.argmax(predictions)
+    # ========================================================
+    # NORMALISE FRUIT NAME
+    # ========================================================
+
+    fruit_name = str(
+        fruit_type
+    ).strip().lower()
+
+    fruit_mapping = {
+        "apple": "Apple",
+        "banana": "Banana",
+
+        "grape": "Grape",
+        "grapes": "Grape",
+
+        "dragon fruit": "Dragon Fruit",
+        "dragonfruit": "Dragon Fruit",
+
+        "durian": "Durian",
+        "mango": "Mango",
+        "strawberry": "Strawberry"
+    }
+
+    model_b_fruit = fruit_mapping.get(
+        fruit_name
     )
 
-    confidence = float(
-        predictions[class_index]
+    # ========================================================
+    # FRUIT NOT SUPPORTED BY MODEL B
+    # ========================================================
+
+    if model_b_fruit is None:
+
+        return {
+            "model": "B",
+            "available": False,
+            "ripeness": None,
+            "confidence": None,
+            "probabilities": {}
+        }
+
+    # ========================================================
+    # FIND RIPE / UNRIPE CLASS
+    # ========================================================
+
+    ripe_class = (
+        f"Ripe {model_b_fruit}"
     )
 
-    ripeness = MODEL_B_CLASSES[
-        class_index
-    ]
+    unripe_class = (
+        f"Unripe {model_b_fruit}"
+    )
+
+    ripe_index = MODEL_B_CLASSES.index(
+        ripe_class
+    )
+
+    unripe_index = MODEL_B_CLASSES.index(
+        unripe_class
+    )
+
+    ripe_probability = float(
+        predictions[ripe_index]
+    )
+
+    unripe_probability = float(
+        predictions[unripe_index]
+    )
+
+    # ========================================================
+    # NORMALISE BETWEEN RIPE + UNRIPE
+    # ========================================================
+
+    total_probability = (
+        ripe_probability
+        + unripe_probability
+    )
+
+    if total_probability > 0:
+
+        ripe_score = (
+            ripe_probability
+            / total_probability
+        )
+
+        unripe_score = (
+            unripe_probability
+            / total_probability
+        )
+
+    else:
+
+        ripe_score = 0.0
+        unripe_score = 0.0
+
+    # ========================================================
+    # FINAL MODEL B RESULT
+    # ========================================================
+
+    if ripe_score >= unripe_score:
+
+        ripeness = "Ripe"
+        confidence = ripe_score
+
+    else:
+
+        ripeness = "Unripe"
+        confidence = unripe_score
 
     return {
         "model": "B",
+
+        "available": True,
+
         "ripeness": ripeness,
-        "confidence": confidence,
+
+        "confidence": float(
+            confidence
+        ),
+
         "probabilities": {
-            class_name: float(
-                predictions[index]
-            )
-            for index, class_name
-            in enumerate(
-                MODEL_B_CLASSES
+            "Ripe": float(
+                ripe_score
+            ),
+
+            "Unripe": float(
+                unripe_score
             )
         }
     }
@@ -326,34 +447,39 @@ def fuse_ripeness(
     # 15% COARSE SUPPORT
     # ========================================================
 
-    b_ripeness = result_b[
-        "ripeness"
-    ]
+    if result_b.get(
+        "available",
+        False
+    ):
 
-    b_confidence = result_b[
-        "confidence"
-    ]
+        b_ripeness = result_b[
+            "ripeness"
+        ]
 
-    if b_ripeness == "Unripe":
+        b_confidence = result_b[
+            "confidence"
+        ]
 
-        scores["Unripe"] += (
-            0.15
-            * b_confidence
-        )
+        if b_ripeness == "Unripe":
 
-    elif b_ripeness == "Ripe":
+            scores["Unripe"] += (
+                0.15
+                * b_confidence
+            )
 
-        # Model B cannot distinguish
-        # Ripe from Overripe.
-        scores["Ripe"] += (
-            0.075
-            * b_confidence
-        )
+        elif b_ripeness == "Ripe":
 
-        scores["Overripe"] += (
-            0.075
-            * b_confidence
-        )
+            # Model B only knows Ripe / Unripe.
+            # It cannot distinguish Ripe from Overripe.
+            scores["Ripe"] += (
+                0.075
+                * b_confidence
+            )
+
+            scores["Overripe"] += (
+                0.075
+                * b_confidence
+            )
 
     # ========================================================
     # FINAL RESULT

@@ -861,6 +861,361 @@ def run_fruit_assessment(
                 print(error)
 
 
+    # ========================================================
+    # MEMBER 3: RIPENESS CLASSIFICATION
+    # ========================================================
+    print("\nRipeness Classification\n------------------------------")
+
+    ripeness_results = []
+
+    # Image for final ripeness results
+    ripeness_image = working_image.copy()
+
+    if len(roi_results) == 0:
+        print(
+            "Skipped - no segmented fruit ROIs available."
+        )
+
+    else:
+        for index, roi_result in enumerate(
+            roi_results,
+            start=1
+        ):
+
+            fruit_type = roi_result[
+                "fruit_type"
+            ]
+
+            bounding_box = roi_result[
+                "bounding_box"
+            ]
+
+            x1, y1, x2, y2 = (
+                bounding_box
+            )
+
+            # =================================================
+            # GET FRUIT ROI
+            # =================================================
+            fruit_roi = working_image[
+                y1:y2,
+                x1:x2
+            ].copy()
+
+            if fruit_roi.size == 0:
+
+                print(
+                    f"Fruit {index}: "
+                    f"invalid ROI."
+                )
+
+                continue
+
+            # =================================================
+            # MODEL B
+            # =================================================
+            result_b = (
+                classify_with_model_b(
+                    fruit_roi,
+                    fruit_type
+                )
+            )
+
+            # =================================================
+            # MODEL E
+            # =================================================
+            result_e = (
+                classify_with_model_e(
+                    fruit_roi
+                )
+            )
+
+            # =================================================
+            # MODEL C RESULT FROM DETECTION STAGE
+            # =================================================
+            model_c_ripeness = (
+                roi_result.get(
+                    "model_c_ripeness"
+                )
+            )
+
+            # Find corresponding final detection
+            detection_index = (
+                roi_result[
+                    "fruit_index"
+                ]
+                - 1
+            )
+
+            final_detection = (
+                final_detections[
+                    detection_index
+                ]
+            )
+
+            model_c_confidence = (
+                final_detection.get(
+                    "confidence_c"
+                )
+            )
+
+            # =================================================
+            # FUSE B + C + E
+            # =================================================
+            final_ripeness = (
+                fuse_ripeness(
+                    result_b,
+                    model_c_ripeness,
+                    model_c_confidence,
+                    result_e
+                )
+            )
+
+            # =================================================
+            # SAVE RESULT
+            # =================================================
+            ripeness_result = {
+                "fruit_index": index,
+
+                "fruit_type": fruit_type,
+
+                "bounding_box": (
+                    bounding_box
+                ),
+
+                "model_b_ripeness": (
+                    result_b[
+                        "ripeness"
+                    ]
+                ),
+
+                "model_b_confidence": (
+                    result_b[
+                        "confidence"
+                    ]
+                ),
+
+                "model_c_ripeness": (
+                    model_c_ripeness
+                ),
+
+                "model_c_confidence": (
+                    model_c_confidence
+                ),
+
+                "model_e_ripeness": (
+                    result_e[
+                        "ripeness"
+                    ]
+                ),
+
+                "model_e_confidence": (
+                    result_e[
+                        "confidence"
+                    ]
+                ),
+
+                "final_ripeness": (
+                    final_ripeness[
+                        "ripeness"
+                    ]
+                ),
+
+                "final_confidence": (
+                    final_ripeness[
+                        "confidence"
+                    ]
+                ),
+
+                "fusion_scores": (
+                    final_ripeness[
+                        "scores"
+                    ]
+                )
+            }
+
+            ripeness_results.append(
+                ripeness_result
+            )
+
+            # Also attach final result back to ROI result.
+            roi_result[
+                "ripeness"
+            ] = final_ripeness[
+                "ripeness"
+            ]
+
+            roi_result[
+                "ripeness_confidence"
+            ] = final_ripeness[
+                "confidence"
+            ]
+
+            # =================================================
+            # PRINT RESULT
+            # =================================================
+            print(
+                f"Fruit {index}"
+            )
+
+            print(
+                f"Fruit Type : "
+                f"{fruit_type}"
+            )
+
+            if result_b.get(
+                "available",
+                False
+            ):
+
+                print(
+                    f"Model B    : "
+                    f"{result_b['ripeness']} "
+                    f"({result_b['confidence'] * 100:.2f}%)"
+                )
+
+            else:
+            
+                print(
+                    "Model B    : "
+                    "Not available for this fruit"
+                )
+
+            if model_c_ripeness is not None:
+                if model_c_confidence is not None:
+                    print(
+                        f"Model C    : "
+                        f"{model_c_ripeness} "
+                        f"({model_c_confidence * 100:.2f}%)"
+                    )
+
+                else:
+                    print(
+                        f"Model C    : "
+                        f"{model_c_ripeness}"
+                    )
+
+            else:
+                print(
+                    "Model C    : "
+                    "Not available for this fruit"
+                )
+
+            print(
+                f"Model E    : "
+                f"{result_e['ripeness']} "
+                f"({result_e['confidence'] * 100:.2f}%)"
+            )
+
+            print(
+                f"Final      : "
+                f"{final_ripeness['ripeness']} "
+                f"({final_ripeness['confidence'] * 100:.2f}%)\n"
+            )
+
+            # =================================================
+            # DRAW FINAL RIPENESS RESULT
+            # =================================================
+
+            final_label = (
+                f"{final_ripeness['ripeness']} "
+                f"{final_ripeness['confidence'] * 100:.2f}%"
+            )
+
+            # Draw fruit bounding box
+            cv2.rectangle(
+                ripeness_image,
+                (x1, y1),
+                (x2, y2),
+                (0, 0, 255),
+                3
+            )
+
+            # Get text size
+            (text_width, text_height), baseline = (
+                cv2.getTextSize(
+                    final_label,
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    2
+                )
+            )
+
+            # Position label above bounding box
+            text_x = x1
+            text_y = max(
+                y1 - 10,
+                text_height + 10
+            )
+
+            # Draw background behind text
+            cv2.rectangle(
+                ripeness_image,
+                (
+                    text_x,
+                    text_y - text_height - 8
+                ),
+                (
+                    text_x + text_width + 8,
+                    text_y + baseline
+                ),
+                (0, 0, 255),
+                -1
+            )
+
+            # Draw final ripeness text
+            cv2.putText(
+                ripeness_image,
+                final_label,
+                (
+                    text_x + 4,
+                    text_y - 4
+                ),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 0, 0),
+                2,
+                cv2.LINE_AA
+            )
+
+#    # ========================================================
+#    # DISPLAY FINAL RIPENESS IMAGE
+#    # ========================================================
+#
+#    if len(ripeness_results) > 0:
+#
+#        display_ripeness_image = resize_for_display(
+#            ripeness_image
+#        )
+#
+#        cv2.namedWindow(
+#            "Final Ripeness Classification",
+#            cv2.WINDOW_NORMAL
+#        )
+#
+#        ripeness_height, ripeness_width = (
+#            display_ripeness_image.shape[:2]
+#        )
+#
+#        cv2.resizeWindow(
+#            "Final Ripeness Classification",
+#            ripeness_width,
+#            ripeness_height
+#        )
+#
+#        cv2.imshow(
+#            "Final Ripeness Classification",
+#            display_ripeness_image
+#        )
+#
+#        print(
+#            "\nPress any key on the Final Ripeness "
+#            "Classification window to continue."
+#        )
+#
+#        cv2.waitKey(0)
+#        cv2.destroyAllWindows()
+
 #    # ========================================================
 #    # MEMBER 3: BLEMISH ANALYSIS
 #    # ========================================================
@@ -992,6 +1347,9 @@ def run_fruit_assessment(
 
     "detection_image": detection_image,
 
+    "ripeness_results": ripeness_results,
+    "ripeness_image": ripeness_image,
+
 #    "blemish_mask": (
 #        blemish_results["blemish_mask"]
 #        if blemish_results is not None else None
@@ -1015,7 +1373,6 @@ def run_fruit_assessment(
 
 
 if __name__ == "__main__":
-
     # Select Image
     root = Tk()
     root.withdraw()
@@ -1024,7 +1381,7 @@ if __name__ == "__main__":
         image_path = filedialog.askopenfilename(
             title="Select Fruit Image",
             filetypes=[
-                ("Image Files", "*.jpg *.jpeg *.png *.bmp"),
+                ("Image Files", "*.jpg *.jpeg *.png *.bmp *.webp"),
                 ("All Files", "*.*")
             ]
         )
@@ -1047,18 +1404,65 @@ if __name__ == "__main__":
         calibration_mode=False
     )
 
+    # ========================================================
+    # DISPLAY MEMBER 2 RESULTS
+    # ========================================================
+    
     display_results(results)
-
+    
     display_roi_results(
         results["roi_results"]
     )
-
+    
+    # Save results after displaying
     save_results(results)
-
-    print("\nPress any key on an image window to continue.")
-
+    
+    print(
+        "\nPress any key on the image windows to continue to Ripeness Classification."
+    )
+    
     cv2.waitKey(0)
     cv2.destroyAllWindows()
+    
+    
+    # ========================================================
+    # DISPLAY MEMBER 3 RIPENESS RESULT
+    # ========================================================
+    
+    if len(results["ripeness_results"]) > 0:
+    
+        display_ripeness_image = resize_for_display(
+            results["ripeness_image"]
+        )
+    
+        cv2.namedWindow(
+            "Final Ripeness Classification",
+            cv2.WINDOW_NORMAL
+        )
+    
+        ripeness_height, ripeness_width = (
+            display_ripeness_image.shape[:2]
+        )
+    
+        cv2.resizeWindow(
+            "Final Ripeness Classification",
+            ripeness_width,
+            ripeness_height
+        )
+    
+        cv2.imshow(
+            "Final Ripeness Classification",
+            display_ripeness_image
+        )
+    
+        print(
+            "\nPress any key on the Final Ripeness Classification window to end the program."
+        )
+    
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+
 
 #    # Blemish calculation
 #    if results["blemish_mask"] is not None:
