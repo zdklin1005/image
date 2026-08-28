@@ -9,9 +9,11 @@ from pathlib import Path
 import cv2
 
 from fruit_ripeness_object_detection.fruit_detection import (
+    assess_detection_quality,
     detect_with_model_a,
     detect_with_model_c,
     detect_with_model_d,
+    filter_detections_by_class_threshold,
     fuse_detections,
 )
 from preprocessing import preprocess_fruit_image
@@ -93,9 +95,15 @@ def load_single_fruit_regression_sample():
 
 def run_full_frame(preprocessing_results, confidence_threshold=0.30):
     image = preprocessing_results["classification_image"]
-    detections_a = detect_with_model_a(image, confidence_threshold)
-    detections_c = detect_with_model_c(image, confidence_threshold)
-    detections_d = detect_with_model_d(image, confidence_threshold)
+    detections_a = detect_with_model_a(
+        image, confidence_threshold, apply_class_thresholds=False
+    )
+    detections_c = detect_with_model_c(
+        image, confidence_threshold, apply_class_thresholds=False
+    )
+    detections_d = detect_with_model_d(
+        image, confidence_threshold, apply_class_thresholds=False
+    )
     return detections_a, detections_c, detections_d
 
 
@@ -132,43 +140,85 @@ def run_tiled_pass(preprocessing_results, confidence_threshold=0.30):
     return tiled_a, tiled_c, tiled_d, len(tiles)
 
 
-def detect_image(image_path, confidence_threshold=0.30):
+def detect_image(
+    image_path,
+    confidence_threshold=0.30,
+    candidate_mode="tiled",
+):
     preprocessing_results = preprocess_fruit_image(image_path)
     full_a, full_c, full_d = run_full_frame(
         preprocessing_results,
         confidence_threshold,
     )
     baseline = fuse_detections(full_a, full_c, full_d)
-    tiled_a, tiled_c, tiled_d, tile_count = run_tiled_pass(
-        preprocessing_results,
-        confidence_threshold,
+    filtered_a = filter_detections_by_class_threshold(
+        full_a, confidence_threshold
     )
+    filtered_c = filter_detections_by_class_threshold(
+        full_c, confidence_threshold
+    )
+    filtered_d = filter_detections_by_class_threshold(
+        full_d, confidence_threshold
+    )
+    if candidate_mode == "tiled":
+        tiled_a, tiled_c, tiled_d, tile_count = run_tiled_pass(
+            preprocessing_results,
+            confidence_threshold,
+        )
+    else:
+        tiled_a, tiled_c, tiled_d, tile_count = [], [], [], 0
     candidate = fuse_detections(
-        full_a,
-        full_c,
-        full_d + tiled_d,
+        filtered_a,
+        filtered_c,
+        filtered_d + tiled_d,
+    )
+    candidate = assess_detection_quality(
+        candidate,
+        preprocessing_results["classification_image"].shape,
+        valid_content_bbox=preprocessing_results["valid_content_bbox"],
+        retain_rejected=True,
     )
     return baseline, candidate, tile_count
 
 
 def top_prediction(detections):
     if not detections:
-        return "", 0.0
+        return "", 0.0, "", ""
 
     detection = max(detections, key=lambda item: item["confidence"])
-    return detection["fruit_type"], detection["confidence"]
+    return (
+        detection["fruit_type"],
+        detection["confidence"],
+        detection.get("reliability_status", ""),
+        detection.get("box_status", ""),
+    )
 
 
-def evaluate_single_fruit_samples(samples, confidence_threshold):
+def evaluate_single_fruit_samples(
+    samples,
+    confidence_threshold,
+    candidate_mode,
+):
     rows = []
 
     for index, sample in enumerate(samples, start=1):
         baseline, candidate, tile_count = detect_image(
             sample["image"],
             confidence_threshold,
+            candidate_mode,
         )
-        baseline_class, baseline_confidence = top_prediction(baseline)
-        candidate_class, candidate_confidence = top_prediction(candidate)
+        (
+            baseline_class,
+            baseline_confidence,
+            baseline_reliability,
+            baseline_box_status,
+        ) = top_prediction(baseline)
+        (
+            candidate_class,
+            candidate_confidence,
+            candidate_reliability,
+            candidate_box_status,
+        ) = top_prediction(candidate)
         expected = sample["expected_fruit"]
         rows.append({
             "evaluation": "single_fruit",
@@ -177,9 +227,13 @@ def evaluate_single_fruit_samples(samples, confidence_threshold):
             "baseline_prediction": baseline_class,
             "baseline_confidence": baseline_confidence,
             "baseline_correct": baseline_class.casefold() == expected.casefold(),
+            "baseline_reliability": baseline_reliability,
+            "baseline_box_status": baseline_box_status,
             "candidate_prediction": candidate_class,
             "candidate_confidence": candidate_confidence,
             "candidate_correct": candidate_class.casefold() == expected.casefold(),
+            "candidate_reliability": candidate_reliability,
+            "candidate_box_status": candidate_box_status,
             "tile_count": tile_count,
         })
         print(f"Single-fruit regression: {index}/{len(samples)}", flush=True)
@@ -187,7 +241,7 @@ def evaluate_single_fruit_samples(samples, confidence_threshold):
     return rows
 
 
-def evaluate_external_images(confidence_threshold):
+def evaluate_external_images(confidence_threshold, candidate_mode):
     rows = []
 
     for image_name, expected_classes in EXTERNAL_PRESENCE_LABELS.items():
@@ -195,6 +249,7 @@ def evaluate_external_images(confidence_threshold):
         baseline, candidate, tile_count = detect_image(
             image_path,
             confidence_threshold,
+            candidate_mode,
         )
         baseline_classes = {item["fruit_type"] for item in baseline}
         candidate_classes = {item["fruit_type"] for item in candidate}
@@ -205,9 +260,13 @@ def evaluate_external_images(confidence_threshold):
             "baseline_prediction": json.dumps(sorted(baseline_classes)),
             "baseline_confidence": "",
             "baseline_correct": len(expected_classes & baseline_classes),
+            "baseline_reliability": "",
+            "baseline_box_status": "",
             "candidate_prediction": json.dumps(sorted(candidate_classes)),
             "candidate_confidence": "",
             "candidate_correct": len(expected_classes & candidate_classes),
+            "candidate_reliability": "",
+            "candidate_box_status": "",
             "tile_count": tile_count,
         })
 
@@ -252,6 +311,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--confidence-threshold", type=float, default=0.30)
     parser.add_argument("--limit", type=int)
+    parser.add_argument(
+        "--candidate-mode",
+        choices=("tiled", "full-filtered"),
+        default="tiled",
+    )
     arguments = parser.parse_args()
     samples = load_single_fruit_regression_sample()
 
@@ -261,16 +325,27 @@ def main():
     rows = evaluate_single_fruit_samples(
         samples,
         arguments.confidence_threshold,
+        arguments.candidate_mode,
     )
-    rows.extend(evaluate_external_images(arguments.confidence_threshold))
+    rows.extend(evaluate_external_images(
+        arguments.confidence_threshold,
+        arguments.candidate_mode,
+    ))
     summary = create_summary(rows)
 
-    with OUTPUT_CSV.open("w", encoding="utf-8-sig", newline="") as csv_file:
+    if arguments.candidate_mode == "full-filtered":
+        output_csv = EVALUATION_DIRECTORY / "detection_quality_regression.csv"
+        output_summary = EVALUATION_DIRECTORY / "detection_quality_regression.json"
+    else:
+        output_csv = OUTPUT_CSV
+        output_summary = OUTPUT_SUMMARY
+
+    with output_csv.open("w", encoding="utf-8-sig", newline="") as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
 
-    OUTPUT_SUMMARY.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    output_summary.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps(summary, indent=2))
 
 

@@ -7,6 +7,7 @@ from pathlib import Path
 from calibration_segmentation.roi_processing import process_fruit_roi
 from preprocessing import preprocess_fruit_image
 from fruit_ripeness_object_detection.fruit_detection import (
+    assess_detection_quality,
     detect_with_model_a,
     detect_with_model_c,
     detect_with_model_d,
@@ -47,6 +48,11 @@ def evaluate_sample(sample):
         detect_with_model_a(classification_image, 0.30),
         detect_with_model_c(classification_image, 0.30),
         detect_with_model_d(classification_image, 0.30),
+    )
+    final_detections = assess_detection_quality(
+        final_detections,
+        classification_image.shape,
+        valid_content_bbox=preprocessing["valid_content_bbox"],
     )
 
     if not final_detections:

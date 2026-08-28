@@ -10,6 +10,7 @@ from calibration_segmentation.roi_processing import process_fruit_roi
 from preprocessing import preprocess_fruit_image
 from fruit_ripeness_object_detection.blemish import detect_fruit_blemish
 from fruit_ripeness_object_detection.fruit_detection import (
+    assess_detection_quality,
     detect_with_model_a,
     detect_with_model_c,
     detect_with_model_d,
@@ -43,6 +44,12 @@ def evaluate_image(image_path):
         detections_d,
         iou_threshold=0.30,
     )
+    final_detections = assess_detection_quality(
+        final_detections,
+        classification_image.shape,
+        valid_content_bbox=preprocessing["valid_content_bbox"],
+        retain_rejected=True,
+    )
 
     image_rows = []
 
@@ -56,6 +63,8 @@ def evaluate_image(image_path):
             "agreement": detection["agreement"],
             "class_disagreement": detection.get("class_disagreement", False),
             "class_votes": json.dumps(detection.get("class_votes", {})),
+            "reliability_status": detection.get("reliability_status"),
+            "box_status": detection.get("box_status"),
             "model_c_ripeness": detection.get("model_c_ripeness"),
             "final_ripeness": None,
             "ripeness_confidence": None,
@@ -64,10 +73,10 @@ def evaluate_image(image_path):
             "roi_error": None,
         }
 
-        if not detection.get("is_supported", True):
+        if detection.get("reliability_status") == "Rejected":
             row["roi_error"] = (
-                "Skipped: unsupported detected class "
-                f"{detection.get('detected_fruit_type', 'Unknown')}"
+                "Skipped: "
+                + "; ".join(detection.get("reliability_reasons", []))
             )
             image_rows.append(row)
             continue
@@ -163,6 +172,8 @@ def main():
         "agreement",
         "class_disagreement",
         "class_votes",
+        "reliability_status",
+        "box_status",
         "model_c_ripeness",
         "final_ripeness",
         "ripeness_confidence",

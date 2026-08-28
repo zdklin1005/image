@@ -57,6 +57,41 @@ SUPPORTED_FRUITS = {
     "pear",
 }
 
+CLASS_CONFIDENCE_THRESHOLDS = {
+    "apple": 0.30,
+    "banana": 0.30,
+    "grape": 0.35,
+    "mango": 0.60,
+    "melon": 0.35,
+    "orange": 0.30,
+    "peach": 0.35,
+    "pear": 0.35,
+}
+
+DEFAULT_CLASS_CONFIDENCE_THRESHOLD = 0.50
+
+
+def get_class_confidence_threshold(fruit_type):
+    fruit_class = normalise_fruit_name(fruit_type)
+    return CLASS_CONFIDENCE_THRESHOLDS.get(
+        fruit_class,
+        DEFAULT_CLASS_CONFIDENCE_THRESHOLD,
+    )
+
+
+def filter_detections_by_class_threshold(
+    detections,
+    confidence_floor=0.0,
+):
+    return [
+        detection
+        for detection in detections
+        if detection["confidence"] >= max(
+            confidence_floor,
+            get_class_confidence_threshold(detection["fruit_type"]),
+        )
+    ]
+
 
 # ============================================================
 # MODEL A - FRUIT DETECTION
@@ -64,7 +99,8 @@ SUPPORTED_FRUITS = {
 
 def detect_with_model_a(
     image,
-    confidence_threshold=0.40
+    confidence_threshold=0.40,
+    apply_class_thresholds=True,
 ):
     """
     Model A:
@@ -101,6 +137,12 @@ def detect_with_model_a(
             model_a.names[class_id]
         ).strip()
 
+        if apply_class_thresholds and confidence < max(
+            confidence_threshold,
+            get_class_confidence_threshold(fruit_type),
+        ):
+            continue
+
         x1, y1, x2, y2 = [
             int(value)
             for value
@@ -129,7 +171,8 @@ def detect_with_model_a(
 
 def detect_with_model_c(
     image,
-    confidence_threshold=0.40
+    confidence_threshold=0.40,
+    apply_class_thresholds=True,
 ):
     """
     Model C originally predicts:
@@ -188,6 +231,12 @@ def detect_with_model_c(
             fruit_type = full_class
             ripeness = "Unknown"
 
+        if apply_class_thresholds and confidence < max(
+            confidence_threshold,
+            get_class_confidence_threshold(fruit_type),
+        ):
+            continue
+
         x1, y1, x2, y2 = [
             int(value)
             for value
@@ -219,7 +268,8 @@ def detect_with_model_c(
 
 def detect_with_model_d(
     image,
-    confidence_threshold=0.30
+    confidence_threshold=0.30,
+    apply_class_thresholds=True,
 ):
     """
     Model D:
@@ -262,6 +312,12 @@ def detect_with_model_d(
         fruit_type = str(
             model_d.names[class_id]
         ).strip()
+
+        if apply_class_thresholds and confidence < max(
+            confidence_threshold,
+            get_class_confidence_threshold(fruit_type),
+        ):
+            continue
 
         x1, y1, x2, y2 = [
             int(value)
@@ -659,6 +715,122 @@ def fuse_detections(
 
 
 # ============================================================
+# DETECTION RELIABILITY AND BOUNDING-BOX VALIDATION
+# ============================================================
+
+def assess_detection_quality(
+    detections,
+    image_shape,
+    valid_content_bbox=None,
+    minimum_area_ratio=0.0025,
+    minimum_content_overlap=0.25,
+    maximum_aspect_ratio=12.0,
+    retain_rejected=False,
+):
+    """Validate boxes and attach an operator-facing reliability status."""
+    image_height, image_width = image_shape[:2]
+    image_area = max(1, image_width * image_height)
+
+    if valid_content_bbox is None:
+        valid_content_bbox = (0, 0, image_width, image_height)
+
+    content_x1, content_y1, content_x2, content_y2 = valid_content_bbox
+    assessed = []
+
+    for detection in detections:
+        result = dict(detection)
+        x1, y1, x2, y2 = result["bounding_box"]
+        box_width = max(0, x2 - x1)
+        box_height = max(0, y2 - y1)
+        box_area = box_width * box_height
+        area_ratio = box_area / image_area
+        smaller_side = max(1, min(box_width, box_height))
+        aspect_ratio = max(box_width, box_height) / smaller_side
+
+        intersection_width = max(
+            0,
+            min(x2, content_x2) - max(x1, content_x1),
+        )
+        intersection_height = max(
+            0,
+            min(y2, content_y2) - max(y1, content_y1),
+        )
+        content_overlap = (
+            intersection_width * intersection_height / box_area
+            if box_area > 0 else 0.0
+        )
+        box_issues = []
+        box_review_reasons = []
+
+        if box_width < 8 or box_height < 8 or box_area <= 0:
+            box_issues.append("Malformed or extremely small box")
+
+        if area_ratio < minimum_area_ratio:
+            box_issues.append("Box is too small for reliable analysis")
+
+        if content_overlap < minimum_content_overlap:
+            box_issues.append("Box overlaps image padding or lies outside content")
+        elif content_overlap < 0.80:
+            box_review_reasons.append(
+                "Box partly overlaps letterbox padding"
+            )
+
+        if aspect_ratio > maximum_aspect_ratio:
+            box_issues.append("Box has an implausible aspect ratio")
+
+        if box_issues:
+            box_status = "Rejected"
+        elif box_review_reasons:
+            box_status = "Review required"
+        else:
+            box_status = "Accepted"
+        models = result.get("models", [])
+        reliability_reasons = []
+
+        if box_status == "Rejected":
+            reliability_status = "Rejected"
+            reliability_reasons.extend(box_issues)
+        elif not result.get("is_supported", True):
+            reliability_status = "Rejected"
+            reliability_reasons.append("Fruit class is unsupported")
+        elif box_status == "Review required":
+            reliability_status = "Review required"
+            reliability_reasons.extend(box_review_reasons)
+        elif result.get("class_disagreement", False):
+            reliability_status = "Review required"
+            reliability_reasons.append("Detection models disagree on fruit class")
+        elif len(models) < 2:
+            reliability_status = "Review required"
+            reliability_reasons.append("Detection is supported by one model only")
+        else:
+            reliability_status = "Accepted"
+            reliability_reasons.append("Multiple models support the detection")
+
+        result.update({
+            "box_status": box_status,
+            "box_area_ratio": float(area_ratio),
+            "box_content_overlap": float(content_overlap),
+            "box_aspect_ratio": float(aspect_ratio),
+            "box_issues": box_issues,
+            "box_review_reasons": box_review_reasons,
+            "reliability_status": reliability_status,
+            "reliability_reasons": reliability_reasons,
+            "class_confidence_threshold": get_class_confidence_threshold(
+                result.get("detected_fruit_type", result["fruit_type"])
+            ),
+        })
+
+        if retain_rejected or reliability_status != "Rejected":
+            assessed.append(result)
+
+    assessed.sort(
+        key=lambda detection: detection["confidence"],
+        reverse=True,
+    )
+    return assessed
+
+
+# ============================================================
 # DRAW ALL FINAL DETECTIONS
 # ============================================================
 
@@ -688,18 +860,28 @@ def draw_final_detections(
             ]
         )
 
-        # Red bounding box
+        reliability_status = detection.get(
+            "reliability_status",
+            "Review required",
+        )
+        colour = {
+            "Accepted": (0, 180, 0),
+            "Review required": (0, 165, 255),
+            "Rejected": (128, 128, 128),
+        }.get(reliability_status, (0, 0, 255))
+
         cv2.rectangle(
             output_image,
             (x1, y1),
             (x2, y2),
-            (0, 0, 255),
+            colour,
             3
         )
 
         label = (
             f"{fruit_type} "
-            f"{confidence * 100:.1f}%"
+            f"{confidence * 100:.1f}% "
+            f"[{reliability_status}]"
         )
 
         cv2.putText(
@@ -711,7 +893,7 @@ def draw_final_detections(
             ),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.8,
-            (0, 0, 255),
+            colour,
             3
         )
 
