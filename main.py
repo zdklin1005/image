@@ -40,6 +40,7 @@ from fruit_ripeness_object_detection.fruit_detection import (
     detect_with_model_c,
     detect_with_model_d,
     fuse_detections,
+    assess_detection_quality,
     draw_final_detections,
     crop_all_detected_fruits
 )
@@ -145,6 +146,26 @@ def run_fruit_assessment(
         "output_size"
     ]
 
+    valid_content_bbox = preprocessing_results[
+        "valid_content_bbox"
+    ]
+
+    preprocessing_suitability = preprocessing_results[
+        "preprocessing_suitability"
+    ]
+
+    blur_status = preprocessing_results[
+        "blur_status"
+    ]
+
+    exposure_status = preprocessing_results[
+        "exposure_status"
+    ]
+
+    contrast_status = preprocessing_results[
+        "contrast_status"
+    ]
+
     print("\nImage Preprocessing")
     print("------------------------------")
 
@@ -176,6 +197,23 @@ def run_fruit_assessment(
     print(
         f"Bright pixels   : "
         f"{bright_pixel_ratio:.2%}"
+    )
+
+    print(
+        f"Preprocessing suitability: "
+        f"{preprocessing_suitability}"
+    )
+
+    print(
+        f"Blur: {blur_status}"
+    )
+
+    print(
+        f"Exposure: {exposure_status}"
+    )
+
+    print(
+        f"Contrast: {contrast_status}"
     )
 
     print(
@@ -264,6 +302,13 @@ def run_fruit_assessment(
         iou_threshold=0.30
     )
 
+    final_detections = assess_detection_quality(
+        final_detections,
+        classification_image.shape,
+        valid_content_bbox=valid_content_bbox,
+        retain_rejected=True,
+    )
+
     # ========================================================
     # FRUIT DETECTION RESULTS
     # ========================================================
@@ -314,6 +359,16 @@ def run_fruit_assessment(
             print(
                 f"Agreement   : "
                 f"{detection['agreement']}"
+            )
+
+            print(
+                f"Reliability : "
+                f"{detection['reliability_status']}"
+            )
+
+            print(
+                f"Box quality : "
+                f"{detection['box_status']}"
             )
 
             if "iou" in detection:
@@ -738,6 +793,18 @@ def run_fruit_assessment(
             start=1
         ):
 
+            if detection.get("reliability_status") == "Rejected":
+                print(
+                    f"\nFruit ROI {index} skipped: "
+                    + "; ".join(
+                        detection.get(
+                            "reliability_reasons",
+                            ["Detection was rejected"],
+                        )
+                    )
+                )
+                continue
+
             try:
 
                 roi_result = process_fruit_roi(
@@ -806,6 +873,12 @@ def run_fruit_assessment(
                     "model_c_ripeness"
                 ] = detection.get(
                     "model_c_ripeness"
+                )
+
+                roi_result[
+                    "detection_reliability"
+                ] = detection.get(
+                    "reliability_status"
                 )
 
                 roi_results.append(
@@ -1353,6 +1426,11 @@ def run_fruit_assessment(
     "blur_score": blur_score,
     "is_blurry": is_blurry,
 
+    "preprocessing_suitability": preprocessing_suitability,
+    "blur_status": blur_status,
+    "exposure_status": exposure_status,
+    "contrast_status": contrast_status,
+
     "mean_brightness": mean_brightness,
     "contrast_score": contrast_score,
     "dynamic_range": dynamic_range,
@@ -1523,4 +1601,3 @@ if __name__ == "__main__":
 #
 #        cv2.waitKey(0)
 #        cv2.destroyAllWindows()
-        

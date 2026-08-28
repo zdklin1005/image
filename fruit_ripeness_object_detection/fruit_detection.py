@@ -46,13 +46,61 @@ model_d = YOLO(
 )
 
 
+SUPPORTED_FRUITS = {
+    "apple",
+    "banana",
+    "grape",
+    "mango",
+    "melon",
+    "orange",
+    "peach",
+    "pear",
+}
+
+CLASS_CONFIDENCE_THRESHOLDS = {
+    "apple": 0.30,
+    "banana": 0.30,
+    "grape": 0.35,
+    "mango": 0.60,
+    "melon": 0.35,
+    "orange": 0.30,
+    "peach": 0.35,
+    "pear": 0.35,
+}
+
+DEFAULT_CLASS_CONFIDENCE_THRESHOLD = 0.50
+
+
+def get_class_confidence_threshold(fruit_type):
+    fruit_class = normalise_fruit_name(fruit_type)
+    return CLASS_CONFIDENCE_THRESHOLDS.get(
+        fruit_class,
+        DEFAULT_CLASS_CONFIDENCE_THRESHOLD,
+    )
+
+
+def filter_detections_by_class_threshold(
+    detections,
+    confidence_floor=0.0,
+):
+    return [
+        detection
+        for detection in detections
+        if detection["confidence"] >= max(
+            confidence_floor,
+            get_class_confidence_threshold(detection["fruit_type"]),
+        )
+    ]
+
+
 # ============================================================
 # MODEL A - FRUIT DETECTION
 # ============================================================
 
 def detect_with_model_a(
     image,
-    confidence_threshold=0.40
+    confidence_threshold=0.40,
+    apply_class_thresholds=True,
 ):
     """
     Model A:
@@ -89,6 +137,12 @@ def detect_with_model_a(
             model_a.names[class_id]
         ).strip()
 
+        if apply_class_thresholds and confidence < max(
+            confidence_threshold,
+            get_class_confidence_threshold(fruit_type),
+        ):
+            continue
+
         x1, y1, x2, y2 = [
             int(value)
             for value
@@ -117,7 +171,8 @@ def detect_with_model_a(
 
 def detect_with_model_c(
     image,
-    confidence_threshold=0.40
+    confidence_threshold=0.40,
+    apply_class_thresholds=True,
 ):
     """
     Model C originally predicts:
@@ -176,6 +231,12 @@ def detect_with_model_c(
             fruit_type = full_class
             ripeness = "Unknown"
 
+        if apply_class_thresholds and confidence < max(
+            confidence_threshold,
+            get_class_confidence_threshold(fruit_type),
+        ):
+            continue
+
         x1, y1, x2, y2 = [
             int(value)
             for value
@@ -207,7 +268,8 @@ def detect_with_model_c(
 
 def detect_with_model_d(
     image,
-    confidence_threshold=0.30
+    confidence_threshold=0.30,
+    apply_class_thresholds=True,
 ):
     """
     Model D:
@@ -250,6 +312,12 @@ def detect_with_model_d(
         fruit_type = str(
             model_d.names[class_id]
         ).strip()
+
+        if apply_class_thresholds and confidence < max(
+            confidence_threshold,
+            get_class_confidence_threshold(fruit_type),
+        ):
+            continue
 
         x1, y1, x2, y2 = [
             int(value)
@@ -487,316 +555,345 @@ def fuse_detections(
     detections_a,
     detections_c,
     detections_d,
-    iou_threshold=0.30
+    iou_threshold=0.30,
+    cross_class_iou_threshold=0.60
 ):
     """
     Fuse fruit detections from Models A, C and D.
 
-    Detections are combined when:
-        1. Fruit type is the same
-        2. Bounding boxes overlap sufficiently
-
-    Multiple fruits of the same type are still allowed
-    when they are located at different positions.
+    Same-class boxes retain the original IoU rule. Boxes with different
+    predicted classes are also grouped when they overlap almost completely,
+    because they are very likely to describe the same physical fruit. The
+    final class is selected by confidence-weighted voting within each spatial
+    group, while spatially separate fruits remain separate detections.
     """
+    if not 0.0 <= iou_threshold <= 1.0:
+        raise ValueError("iou_threshold must be between 0 and 1.")
 
-    # ========================================================
-    # COMBINE ALL RAW DETECTIONS
-    # ========================================================
+    if not 0.0 <= cross_class_iou_threshold <= 1.0:
+        raise ValueError(
+            "cross_class_iou_threshold must be between 0 and 1."
+        )
 
-    all_detections = (
-        detections_a
-        + detections_c
-        + detections_d
+    # A stricter threshold is required for cross-class grouping so two
+    # neighbouring fruits are not collapsed merely because their boxes touch.
+    cross_class_iou_threshold = max(
+        cross_class_iou_threshold,
+        iou_threshold,
     )
 
-    # Highest confidence first
     all_detections = sorted(
-        all_detections,
-        key=lambda detection:
-        detection["confidence"],
-        reverse=True
+        detections_a + detections_c + detections_d,
+        key=lambda detection: detection["confidence"],
+        reverse=True,
     )
+
+    spatial_groups = []
+
+    for detection in all_detections:
+        detection_class = normalise_fruit_name(
+            detection["fruit_type"]
+        )
+        best_group = None
+        best_group_iou = 0.0
+
+        for group in spatial_groups:
+            group_iou = 0.0
+
+            for member in group:
+                member_class = normalise_fruit_name(
+                    member["fruit_type"]
+                )
+                current_iou = calculate_iou(
+                    detection["bounding_box"],
+                    member["bounding_box"],
+                )
+                required_iou = (
+                    iou_threshold
+                    if detection_class == member_class
+                    else cross_class_iou_threshold
+                )
+
+                if current_iou >= required_iou:
+                    group_iou = max(group_iou, current_iou)
+
+            if group_iou > best_group_iou:
+                best_group_iou = group_iou
+                best_group = group
+
+        if best_group is None:
+            spatial_groups.append([detection])
+        else:
+            best_group.append(detection)
 
     final_detections = []
 
-    # ========================================================
-    # PROCESS EVERY DETECTION
-    # ========================================================
+    for group in spatial_groups:
+        # One vote per model prevents repeated predictions from a single model
+        # from overpowering the other models in the ensemble.
+        best_by_model = {}
 
-    for detection in all_detections:
+        for detection in group:
+            model_name = detection["model"]
+            previous = best_by_model.get(model_name)
 
-        fruit_type = normalise_fruit_name(
-            detection["fruit_type"]
+            if (
+                previous is None
+                or detection["confidence"] > previous["confidence"]
+            ):
+                best_by_model[model_name] = detection
+
+        class_votes = {}
+
+        for detection in best_by_model.values():
+            fruit_class = normalise_fruit_name(
+                detection["fruit_type"]
+            )
+            class_votes[fruit_class] = (
+                class_votes.get(fruit_class, 0.0)
+                + detection["confidence"]
+            )
+
+        winning_class = max(
+            class_votes,
+            key=lambda fruit_class: (
+                class_votes[fruit_class],
+                max(
+                    detection["confidence"]
+                    for detection in best_by_model.values()
+                    if normalise_fruit_name(
+                        detection["fruit_type"]
+                    ) == fruit_class
+                ),
+            ),
         )
 
-        detection_box = detection[
-            "bounding_box"
+        winning_detections = [
+            detection
+            for detection in best_by_model.values()
+            if normalise_fruit_name(
+                detection["fruit_type"]
+            ) == winning_class
         ]
-
-        matching_detection = None
-        best_iou = 0.0
-
-        # ====================================================
-        # LOOK FOR SAME PHYSICAL FRUIT
-        # ====================================================
-
-        for final_detection in final_detections:
-
-            final_fruit_type = (
-                normalise_fruit_name(
-                    final_detection[
-                        "fruit_type"
-                    ]
-                )
-            )
-
-            # Different fruit type
-            if fruit_type != final_fruit_type:
-                continue
-
-            current_iou = calculate_iou(
-                detection_box,
-                final_detection[
-                    "bounding_box"
-                ]
-            )
-
-            if (
-                current_iou >= iou_threshold
-                and current_iou > best_iou
-            ):
-
-                best_iou = current_iou
-
-                matching_detection = (
-                    final_detection
-                )
-
-        # ====================================================
-        # MATCH FOUND
-        # ====================================================
-
-        if matching_detection is not None:
-
-            current_model = detection[
-                "model"
-            ]
-
-            # Add model if not already included
-            if (
-                current_model
-                not in matching_detection["models"]
-            ):
-
-                matching_detection[
-                    "models"
-                ].append(
-                    current_model
-                )
-
-            # -----------------------------------------------
-            # SAVE MODEL-SPECIFIC CONFIDENCE
-            # -----------------------------------------------
-
-            if current_model == "A":
-
-                matching_detection[
-                    "confidence_a"
-                ] = detection[
-                    "confidence"
-                ]
-
-            elif current_model == "C":
-
-                matching_detection[
-                    "confidence_c"
-                ] = detection[
-                    "confidence"
-                ]
-
-                # Save Model C ripeness
-                matching_detection[
-                    "model_c_ripeness"
-                ] = detection.get(
-                    "ripeness"
-                )
-
-            elif current_model == "D":
-
-                matching_detection[
-                    "confidence_d"
-                ] = detection[
-                    "confidence"
-                ]
-
-            # -----------------------------------------------
-            # USE HIGHER-CONFIDENCE BOUNDING BOX
-            # -----------------------------------------------
-
-            if (
-                detection["confidence"]
-                >
-                matching_detection["confidence"]
-            ):
-
-                matching_detection[
-                    "confidence"
-                ] = detection[
-                    "confidence"
-                ]
-
-                matching_detection[
-                    "bounding_box"
-                ] = detection[
-                    "bounding_box"
-                ]
-
-                matching_detection[
-                    "model"
-                ] = detection[
-                    "model"
-                ]
-
-            matching_detection[
-                "iou"
-            ] = max(
-                matching_detection.get(
-                    "iou",
-                    0.0
-                ),
-                best_iou
-            )
-
-        # ====================================================
-        # NEW PHYSICAL FRUIT
-        # ====================================================
-
-        else:
-
-            new_detection = {
-                "model": detection["model"],
-
-                "fruit_type": (
-                    fruit_type.title()
-                ),
-
-                "confidence": detection[
-                    "confidence"
-                ],
-
-                "bounding_box": detection[
-                    "bounding_box"
-                ],
-
-                "models": [
-                    detection["model"]
-                ],
-
-                "confidence_a": None,
-                "confidence_c": None,
-                "confidence_d": None,
-
-                "model_c_ripeness": None,
-
-                "iou": 0.0
-            }
-
-            # -----------------------------------------------
-            # MODEL-SPECIFIC INFORMATION
-            # -----------------------------------------------
-
-            if detection["model"] == "A":
-
-                new_detection[
-                    "confidence_a"
-                ] = detection[
-                    "confidence"
-                ]
-
-            elif detection["model"] == "C":
-
-                new_detection[
-                    "confidence_c"
-                ] = detection[
-                    "confidence"
-                ]
-
-                new_detection[
-                    "model_c_ripeness"
-                ] = detection.get(
-                    "ripeness"
-                )
-
-            elif detection["model"] == "D":
-
-                new_detection[
-                    "confidence_d"
-                ] = detection[
-                    "confidence"
-                ]
-
-            final_detections.append(
-                new_detection
-            )
-
-    # ========================================================
-    # CREATE AGREEMENT TEXT
-    # ========================================================
-
-    for detection in final_detections:
-
-        models = detection[
-            "models"
-        ]
+        representative = max(
+            winning_detections,
+            key=lambda detection: detection["confidence"],
+        )
 
         model_order = [
-            model
-            for model in ["A", "C", "D"]
-            if model in models
+            model_name
+            for model_name in ["A", "C", "D"]
+            if model_name in best_by_model
         ]
+        detected_classes = {
+            normalise_fruit_name(detection["fruit_type"])
+            for detection in best_by_model.values()
+        }
+        class_disagreement = len(detected_classes) > 1
 
         if len(model_order) == 1:
-
-            detection[
-                "agreement"
-            ] = (
-                f"Model {model_order[0]} only"
+            agreement = f"Model {model_order[0]} only"
+        elif class_disagreement:
+            agreement = (
+                "Spatial match: Model "
+                + " + Model ".join(model_order)
+                + f"; class vote: {winning_class.title()}"
             )
-
         else:
+            agreement = "Model " + " + Model ".join(model_order)
 
-            detection[
-                "agreement"
-            ] = (
-                "Model "
-                + " + Model ".join(
-                    model_order
-                )
+        pairwise_ious = [
+            calculate_iou(
+                group[first_index]["bounding_box"],
+                group[second_index]["bounding_box"],
             )
+            for first_index in range(len(group))
+            for second_index in range(first_index + 1, len(group))
+        ]
 
+        model_c_detection = best_by_model.get("C")
+        model_c_fruit_class = (
+            normalise_fruit_name(model_c_detection["fruit_type"])
+            if model_c_detection is not None else None
+        )
+        model_c_matches_final = (
+            model_c_fruit_class == winning_class
+            if model_c_fruit_class is not None else False
+        )
+        is_supported = winning_class in SUPPORTED_FRUITS
+        displayed_fruit_type = (
+            winning_class.title()
+            if is_supported else "Unsupported"
+        )
 
-    # ========================================================
-    # FINAL CROSS-CLASS DUPLICATE SUPPRESSION
-    # ========================================================
-
-    final_detections = suppress_duplicate_detections(
-        final_detections,
-        iou_threshold=0.75
-    )
-
-
-    # ========================================================
-    # SORT FINAL FRUITS BY CONFIDENCE
-    # ========================================================
+        final_detections.append({
+            "model": representative["model"],
+            "fruit_type": displayed_fruit_type,
+            "detected_fruit_type": winning_class.title(),
+            "is_supported": is_supported,
+            "confidence": representative["confidence"],
+            "bounding_box": representative["bounding_box"],
+            "models": model_order,
+            "confidence_a": (
+                best_by_model["A"]["confidence"]
+                if "A" in best_by_model else None
+            ),
+            "confidence_c": (
+                best_by_model["C"]["confidence"]
+                if "C" in best_by_model else None
+            ),
+            "confidence_d": (
+                best_by_model["D"]["confidence"]
+                if "D" in best_by_model else None
+            ),
+            "model_c_ripeness": (
+                model_c_detection.get("ripeness")
+                if (
+                    model_c_detection is not None
+                    and model_c_matches_final
+                    and is_supported
+                ) else None
+            ),
+            "model_c_raw_ripeness": (
+                model_c_detection.get("ripeness")
+                if model_c_detection is not None else None
+            ),
+            "model_c_fruit_type": (
+                model_c_fruit_class.title()
+                if model_c_fruit_class is not None else None
+            ),
+            "model_c_matches_final": model_c_matches_final,
+            "iou": max(pairwise_ious, default=0.0),
+            "agreement": agreement,
+            "class_disagreement": class_disagreement,
+            "class_votes": {
+                fruit_class.title(): vote
+                for fruit_class, vote in class_votes.items()
+            },
+        })
 
     final_detections.sort(
-        key=lambda detection:
-        detection["confidence"],
-        reverse=True
+        key=lambda detection: detection["confidence"],
+        reverse=True,
     )
 
     return final_detections
+
+
+# ============================================================
+# DETECTION RELIABILITY AND BOUNDING-BOX VALIDATION
+# ============================================================
+
+def assess_detection_quality(
+    detections,
+    image_shape,
+    valid_content_bbox=None,
+    minimum_area_ratio=0.0025,
+    minimum_content_overlap=0.25,
+    maximum_aspect_ratio=12.0,
+    retain_rejected=False,
+):
+    """Validate boxes and attach an operator-facing reliability status."""
+    image_height, image_width = image_shape[:2]
+    image_area = max(1, image_width * image_height)
+
+    if valid_content_bbox is None:
+        valid_content_bbox = (0, 0, image_width, image_height)
+
+    content_x1, content_y1, content_x2, content_y2 = valid_content_bbox
+    assessed = []
+
+    for detection in detections:
+        result = dict(detection)
+        x1, y1, x2, y2 = result["bounding_box"]
+        box_width = max(0, x2 - x1)
+        box_height = max(0, y2 - y1)
+        box_area = box_width * box_height
+        area_ratio = box_area / image_area
+        smaller_side = max(1, min(box_width, box_height))
+        aspect_ratio = max(box_width, box_height) / smaller_side
+
+        intersection_width = max(
+            0,
+            min(x2, content_x2) - max(x1, content_x1),
+        )
+        intersection_height = max(
+            0,
+            min(y2, content_y2) - max(y1, content_y1),
+        )
+        content_overlap = (
+            intersection_width * intersection_height / box_area
+            if box_area > 0 else 0.0
+        )
+        box_issues = []
+        box_review_reasons = []
+
+        if box_width < 8 or box_height < 8 or box_area <= 0:
+            box_issues.append("Malformed or extremely small box")
+
+        if area_ratio < minimum_area_ratio:
+            box_issues.append("Box is too small for reliable analysis")
+
+        if content_overlap < minimum_content_overlap:
+            box_issues.append("Box overlaps image padding or lies outside content")
+        elif content_overlap < 0.80:
+            box_review_reasons.append(
+                "Box partly overlaps letterbox padding"
+            )
+
+        if aspect_ratio > maximum_aspect_ratio:
+            box_issues.append("Box has an implausible aspect ratio")
+
+        if box_issues:
+            box_status = "Rejected"
+        elif box_review_reasons:
+            box_status = "Review required"
+        else:
+            box_status = "Accepted"
+        models = result.get("models", [])
+        reliability_reasons = []
+
+        if box_status == "Rejected":
+            reliability_status = "Rejected"
+            reliability_reasons.extend(box_issues)
+        elif not result.get("is_supported", True):
+            reliability_status = "Rejected"
+            reliability_reasons.append("Fruit class is unsupported")
+        elif box_status == "Review required":
+            reliability_status = "Review required"
+            reliability_reasons.extend(box_review_reasons)
+        elif result.get("class_disagreement", False):
+            reliability_status = "Review required"
+            reliability_reasons.append("Detection models disagree on fruit class")
+        elif len(models) < 2:
+            reliability_status = "Review required"
+            reliability_reasons.append("Detection is supported by one model only")
+        else:
+            reliability_status = "Accepted"
+            reliability_reasons.append("Multiple models support the detection")
+
+        result.update({
+            "box_status": box_status,
+            "box_area_ratio": float(area_ratio),
+            "box_content_overlap": float(content_overlap),
+            "box_aspect_ratio": float(aspect_ratio),
+            "box_issues": box_issues,
+            "box_review_reasons": box_review_reasons,
+            "reliability_status": reliability_status,
+            "reliability_reasons": reliability_reasons,
+            "class_confidence_threshold": get_class_confidence_threshold(
+                result.get("detected_fruit_type", result["fruit_type"])
+            ),
+        })
+
+        if retain_rejected or reliability_status != "Rejected":
+            assessed.append(result)
+
+    assessed.sort(
+        key=lambda detection: detection["confidence"],
+        reverse=True,
+    )
+    return assessed
 
 
 # ============================================================
@@ -829,18 +926,28 @@ def draw_final_detections(
             ]
         )
 
-        # Red bounding box
+        reliability_status = detection.get(
+            "reliability_status",
+            "Review required",
+        )
+        colour = {
+            "Accepted": (0, 180, 0),
+            "Review required": (0, 165, 255),
+            "Rejected": (128, 128, 128),
+        }.get(reliability_status, (0, 0, 255))
+
         cv2.rectangle(
             output_image,
             (x1, y1),
             (x2, y2),
-            (0, 0, 255),
+            colour,
             3
         )
 
         label = (
             f"{fruit_type} "
-            f"{confidence * 100:.1f}%"
+            f"{confidence * 100:.1f}% "
+            f"[{reliability_status}]"
         )
 
         cv2.putText(
@@ -852,7 +959,7 @@ def draw_final_detections(
             ),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.8,
-            (0, 0, 255),
+            colour,
             3
         )
 
