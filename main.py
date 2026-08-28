@@ -968,7 +968,7 @@ def run_fruit_assessment(
     ripeness_results = []
 
     # Image for final ripeness results
-    ripeness_image = working_image.copy()
+    ripeness_image = fruit_only_colour.copy()
 
     if len(roi_results) == 0:
         print(
