@@ -9,4 +9,4 @@ firebase-admin
 requests
 streamlit-image-coordinates
 fpdf2
- 
+tensorflow
