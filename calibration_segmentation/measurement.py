@@ -143,3 +143,42 @@ def extract_main_fruit(
         fruit_area_pixels
     )
 
+def calculate_projected_area_cm2(
+    fruit_area_pixels,
+    pixels_per_cm_x,
+    pixels_per_cm_y
+):
+    """
+    Convert the projected fruit area from pixels
+    into square centimetres using spatial calibration.
+
+    Parameters:
+        fruit_area_pixels:
+            Number of foreground pixels representing
+            the fruit body.
+
+        pixels_per_cm_x:
+            Horizontal spatial scale in pixels/cm.
+
+        pixels_per_cm_y:
+            Vertical spatial scale in pixels/cm.
+
+    Returns:
+        fruit_area_cm2:
+            Estimated projected fruit area in cm^2.
+    """
+
+    # Validate spatial calibration values
+    if pixels_per_cm_x <= 0 or pixels_per_cm_y <= 0:
+        raise ValueError(
+            "Pixels-per-centimetre values must be greater than zero."
+        )
+
+    # Convert pixel area into physical projected area
+    fruit_area_cm2 = (
+        fruit_area_pixels
+        / (pixels_per_cm_x * pixels_per_cm_y)
+    )
+
+    return fruit_area_cm2
+

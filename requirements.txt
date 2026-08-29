@@ -1,0 +1,12 @@
+streamlit
+pillow
+pandas
+matplotlib
+numpy
+opencv-python
+ultralytics
+firebase-admin
+requests
+streamlit-image-coordinates
+fpdf2
+tensorflow

@@ -289,6 +289,10 @@ def draw_ripeness_results(
 
 def run_fruit_assessment(
     image_path,
+    calibration_mode=False,
+    reference_width_cm=None,
+    reference_height_cm=None,
+    target_pixels_per_cm=20,
     use_watershed=True
 ):
     """
@@ -1761,6 +1765,10 @@ if __name__ == "__main__":
     # Run complete pipeline
     results = run_fruit_assessment(
         image_path=image_path,
+
+        # Kaggle image:
+        calibration_mode=False,
+
         use_watershed=False
     )
 
