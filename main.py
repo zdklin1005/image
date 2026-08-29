@@ -147,31 +147,22 @@ def boxes_represent_same_region(
 
 def draw_ripeness_results(
     image,
-    ripeness_results,
-    detection_only_boxes=None
+    ripeness_results
 ):
-    """Draw boxes only for fruits that received a ripeness result."""
+    """Draw final ripeness result for evaluated fruits."""
+
     output_image = image.copy()
-    excluded_boxes = detection_only_boxes or []
 
     for result in ripeness_results:
+
         if (
-            not result.get("ripeness_supported", False)
-            or result.get("final_ripeness") is None
+            result.get("final_ripeness") is None
             or result.get("final_confidence") is None
         ):
             continue
 
-        if any(
-            boxes_represent_same_region(
-                result["bounding_box"],
-                excluded_box
-            )
-            for excluded_box in excluded_boxes
-        ):
-            continue
-
         x1, y1, x2, y2 = result["bounding_box"]
+
         final_label = (
             f"{result['final_ripeness']} "
             f"{result['final_confidence'] * 100:.2f}%"
@@ -185,19 +176,31 @@ def draw_ripeness_results(
             3
         )
 
-        (text_width, text_height), baseline = cv2.getTextSize(
-            final_label,
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            2
+        (text_width, text_height), baseline = (
+            cv2.getTextSize(
+                final_label,
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                2
+            )
         )
+
         text_x = x1
-        text_y = max(y1 - 10, text_height + 10)
+        text_y = max(
+            y1 - 10,
+            text_height + 10
+        )
 
         cv2.rectangle(
             output_image,
-            (text_x, text_y - text_height - 8),
-            (text_x + text_width + 8, text_y + baseline),
+            (
+                text_x,
+                text_y - text_height - 8
+            ),
+            (
+                text_x + text_width + 8,
+                text_y + baseline
+            ),
             (0, 0, 255),
             -1
         )
@@ -205,7 +208,10 @@ def draw_ripeness_results(
         cv2.putText(
             output_image,
             final_label,
-            (text_x + 4, text_y - 4),
+            (
+                text_x + 4,
+                text_y - 4
+            ),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.6,
             (0, 0, 0),
@@ -214,6 +220,76 @@ def draw_ripeness_results(
         )
 
     return output_image
+
+#def draw_ripeness_results(
+#    image,
+#    ripeness_results,
+#    detection_only_boxes=None
+#):
+#    """Draw boxes only for fruits that received a ripeness result."""
+#    output_image = image.copy()
+#    excluded_boxes = detection_only_boxes or []
+#
+#    for result in ripeness_results:
+#        if (
+#            not result.get("ripeness_supported", False)
+#            or result.get("final_ripeness") is None
+#            or result.get("final_confidence") is None
+#        ):
+#            continue
+#
+#        if any(
+#            boxes_represent_same_region(
+#                result["bounding_box"],
+#                excluded_box
+#            )
+#            for excluded_box in excluded_boxes
+#        ):
+#            continue
+#
+#        x1, y1, x2, y2 = result["bounding_box"]
+#        final_label = (
+#            f"{result['final_ripeness']} "
+#            f"{result['final_confidence'] * 100:.2f}%"
+#        )
+#
+#        cv2.rectangle(
+#            output_image,
+#            (x1, y1),
+#            (x2, y2),
+#            (0, 0, 255),
+#            3
+#        )
+#
+#        (text_width, text_height), baseline = cv2.getTextSize(
+#            final_label,
+#            cv2.FONT_HERSHEY_SIMPLEX,
+#            0.6,
+#            2
+#        )
+#        text_x = x1
+#        text_y = max(y1 - 10, text_height + 10)
+#
+#        cv2.rectangle(
+#            output_image,
+#            (text_x, text_y - text_height - 8),
+#            (text_x + text_width + 8, text_y + baseline),
+#            (0, 0, 255),
+#            -1
+#        )
+#
+#        cv2.putText(
+#            output_image,
+#            final_label,
+#            (text_x + 4, text_y - 4),
+#            cv2.FONT_HERSHEY_SIMPLEX,
+#            0.6,
+#            (0, 0, 0),
+#            2,
+#            cv2.LINE_AA
+#        )
+#
+#    return output_image
 
 def run_fruit_assessment(
     image_path,
@@ -1401,14 +1477,14 @@ def run_fruit_assessment(
     ripeness_image = draw_ripeness_results(
         fruit_only_colour,
         ripeness_results,
-        detection_only_boxes=[
-            detection["bounding_box"]
-            for detection in final_detections
-            if not detection.get(
-                "ripeness_supported",
-                False
-            )
-        ]
+        #detection_only_boxes=[
+        #    detection["bounding_box"]
+        #    for detection in final_detections
+        #    if not detection.get(
+        #        "ripeness_supported",
+        #        False
+        #    )
+        #]
     )
 
 #    # ========================================================
