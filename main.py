@@ -10,10 +10,6 @@ from calibration_segmentation.roi_processing import (
     process_fruit_roi
 )
 
-from calibration_segmentation.calibration import (
-    calibrate_image
-)
-
 from calibration_segmentation.segmentation import (
     segment_fruit_otsu,
     combine_otsu_masks_constrained,
@@ -26,8 +22,7 @@ from calibration_segmentation.feature_extraction import (
 )
 
 from calibration_segmentation.measurement import (
-    extract_main_fruit,
-    calculate_projected_area_cm2
+    extract_main_fruit
 )
 
 from calibration_segmentation.visualisation import (
@@ -294,10 +289,6 @@ def draw_ripeness_results(
 
 def run_fruit_assessment(
     image_path,
-    calibration_mode=False,
-    reference_width_cm=None,
-    reference_height_cm=None,
-    target_pixels_per_cm=20,
     use_watershed=True
 ):
     """
@@ -698,70 +689,9 @@ def run_fruit_assessment(
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
-    # ========================================================
-    # MEMBER 2: CALIBRATION
-    # ========================================================
-
-    if calibration_mode:
-
-        if (
-            reference_width_cm is None
-            or reference_height_cm is None
-        ):
-            raise ValueError(
-                "Reference dimensions are required "
-                "when calibration_mode=True."
-            )
-
-        calibration_results = calibrate_image(
-            analysis_image,
-            reference_width_cm,
-            reference_height_cm,
-            target_pixels_per_cm,
-            selection_image=display_image
-        )
-
-        working_image = calibration_results[
-            "rectified_image"
-        ]
-
-        pixels_per_cm_x = calibration_results[
-            "pixels_per_cm_x"
-        ]
-
-        pixels_per_cm_y = calibration_results[
-            "pixels_per_cm_y"
-        ]
-
-        print("\nSpatial Calibration")
-        print("------------------------------")
-
-        print(
-            f"Horizontal scale : "
-            f"{pixels_per_cm_x:.2f} pixels/cm"
-        )
-
-        print(
-            f"Vertical scale   : "
-            f"{pixels_per_cm_y:.2f} pixels/cm"
-        )
-
-    else:
-
-        # Dataset images normally have no known
-        # physical scale.
-        working_image = analysis_image.copy()
-
-        pixels_per_cm_x = None
-        pixels_per_cm_y = None
-
-        print("\nSpatial Calibration")
-        print("------------------------------")
-
-        print(
-            "Skipped - no known physical "
-            "reference available."
-        )
+    # Use the classifier-ready image throughout downstream processing so
+    # detected coordinates and classifier crops refer to the same input.
+    working_image = classification_image.copy()
 
 
     # ========================================================
@@ -972,29 +902,10 @@ def run_fruit_assessment(
         f"{fruit_area_pixels} pixels^2"
     )
 
-    fruit_area_cm2 = None
-
-    if calibration_mode:
-
-        fruit_area_cm2 = (
-            calculate_projected_area_cm2(
-                fruit_area_pixels,
-                pixels_per_cm_x,
-                pixels_per_cm_y
-            )
-        )
-
-        print(
-            f"Physical projected area : "
-            f"{fruit_area_cm2:.2f} cm^2"
-        )
-
-    else:
-
-        print(
-            "Physical projected area : "
-            "Not available"
-        )
+    print(
+        "Physical projected area : "
+        "Not available without spatial calibration"
+    )
 
 
     # ========================================================
@@ -1768,11 +1679,6 @@ def run_fruit_assessment(
     "colour_features": colour_features,
 
     "fruit_area_pixels": fruit_area_pixels,
-    "fruit_area_cm2": fruit_area_cm2,
-
-    "pixels_per_cm_x": pixels_per_cm_x,
-    "pixels_per_cm_y": pixels_per_cm_y,
-
     "blur_score": blur_score,
     "is_blurry": is_blurry,
 
@@ -1855,10 +1761,6 @@ if __name__ == "__main__":
     # Run complete pipeline
     results = run_fruit_assessment(
         image_path=image_path,
-
-        # Kaggle image:
-        calibration_mode=False,
-
         use_watershed=False
     )
 
