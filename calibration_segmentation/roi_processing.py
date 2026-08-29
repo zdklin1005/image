@@ -9,7 +9,7 @@ from calibration_segmentation.segmentation import (
 )
 
 from calibration_segmentation.measurement import (
-    extract_main_fruit
+    extract_main_fruit,
 )
 
 from calibration_segmentation.feature_extraction import (
@@ -17,7 +17,7 @@ from calibration_segmentation.feature_extraction import (
 )
 
 
-def process_fruit_roi(image, bounding_box, use_watershed=False):
+def process_fruit_roi(image, bounding_box, use_watershed=False, global_refined_mask=None):
     """
     Process one YOLO-detected fruit ROI using:
     Otsu segmentation
@@ -61,6 +61,18 @@ def process_fruit_roi(image, bounding_box, use_watershed=False):
         y1:y2,
         x1:x2
     ].copy()
+
+    global_roi_mask = None
+
+    if global_refined_mask is not None:
+
+        global_roi_mask = global_refined_mask[
+            y1:y2,
+            x1:x2
+        ].copy()
+
+        if global_roi_mask.size == 0:
+            global_roi_mask = None
 
     # ----------------------------------------------------
     # 2. Otsu segmentation
@@ -172,6 +184,10 @@ def process_fruit_roi(image, bounding_box, use_watershed=False):
     # ----------------------------------------------------
     # 7. Extract main fruit in ROI
     # ----------------------------------------------------
+    
+    if global_roi_mask is not None:
+
+        final_processing_mask = global_roi_mask
 
     (
         fruit_mask,
@@ -180,6 +196,7 @@ def process_fruit_roi(image, bounding_box, use_watershed=False):
     ) = extract_main_fruit(
         final_processing_mask
     )
+
 
     # ----------------------------------------------------
     # 8. Preserve fruit colour
@@ -242,5 +259,9 @@ def process_fruit_roi(image, bounding_box, use_watershed=False):
 
         "fruit_area_pixels": fruit_area_pixels,
 
-        "colour_features": colour_features
+        "colour_features": colour_features,
+
+        "global_roi_mask": global_roi_mask,
+
     }
+

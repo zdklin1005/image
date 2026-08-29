@@ -7,7 +7,6 @@ import numpy as np
 # ============================================================
 # FRUIT-SPECIFIC HSV THRESHOLDS
 # ============================================================
-
 def get_fruit_specific_hsv_ranges(fruit_type):
     """
     Return HSV ranges for blemish detection
@@ -35,101 +34,227 @@ def get_fruit_specific_hsv_ranges(fruit_type):
         )
     ]
 
-    fruit_ranges = {
+    fruit_hsv_ranges = {
         "apple": [
+            # dark brown / black bruise
             (
-                np.array([0, 0, 0]),
-                np.array([179, 255, 60])
+                np.array([0, 40, 0]),
+                np.array([25, 255, 120])
             ),
+
+            # grey / mould
             (
-                np.array([5, 40, 0]),
-                np.array([20, 255, 95])
+                np.array([0, 0, 40]),
+                np.array([179, 80, 210])
+            ),
+
+            # light grey / white mould
+            (
+                np.array([0, 0, 150]),
+                np.array([179, 65, 245])
             )
         ],
 
         "banana": [
+            # dark bruise
             (
-                np.array([0, 0, 0]),
-                np.array([179, 255, 70])
+                np.array([0, 20, 0]),
+                np.array([30, 255, 110])
             ),
+
+            # grey mould
             (
-                np.array([5, 45, 0]),
-                np.array([25, 255, 125])
+                np.array([0, 0, 40]),
+                np.array([179, 80, 210])
+            ),
+
+            # light grey mould
+            (
+                np.array([0, 0, 150]),
+                np.array([179, 65, 245])
             )
         ],
 
         "grape": [
+            # dark rotten spots only
             (
-                np.array([0, 0, 0]),
-                np.array([179, 255, 70])
+                np.array([0, 20, 0]),
+                np.array([25, 255, 90])
             ),
-            (
-                np.array([5, 40, 0]),
-                np.array([20, 255, 90])
-            )
-        ],
 
-        "mango": [
+            # grey / white mould
             (
-                np.array([0, 0, 0]),
-                np.array([179, 255, 65])
+                np.array([0, 0, 40]),
+                np.array([179, 80, 210])
             ),
             (
-                np.array([5, 40, 0]),
-                np.array([25, 255, 115])
-            )
-        ],
-
-        "melon": [
-            (
-                np.array([0, 0, 0]),
-                np.array([179, 255, 60])
-            ),
-            (
-                np.array([5, 30, 0]),
-                np.array([25, 220, 100])
+                np.array([0, 0, 150]),
+                np.array([179, 65, 245])
             )
         ],
 
         "orange": [
+            # black / dark brown
             (
                 np.array([0, 0, 0]),
                 np.array([179, 255, 60])
             ),
+
             (
                 np.array([5, 45, 0]),
                 np.array([20, 255, 95])
+            ),
+
+            # green / blue-green mould
+            (
+                np.array([35, 15, 25]),
+                np.array([115, 210, 220])
+            ),
+
+            # grey mould
+            (
+                np.array([0, 0, 40]),
+                np.array([179, 80, 210])
+            ),
+
+            # light grey / white mould
+            (
+                np.array([0, 0, 150]),
+                np.array([179, 65, 245])
+            )
+        ],
+
+        "mango": [
+            # very dark / black rotten area
+            (
+                np.array([0, 0, 0]),
+                np.array([179, 255, 75])
+            ),
+
+            # dark brown bruise / rot
+            (
+                np.array([5, 40, 20]),
+                np.array([25, 255, 115])
+            ),
+
+            # grey mould
+            (
+                np.array([0, 0, 75]),
+                np.array([179, 55, 170])
+            ),
+
+            # light grey / white mould
+            (
+                np.array([0, 0, 170]),
+                np.array([179, 45, 235])
+            )
+        ],
+
+        "melon": [
+            # dark bruise / rot
+            (
+                np.array([0, 20, 0]),
+                np.array([25, 255, 100])
+            ),
+
+            # grey mould
+            (
+                np.array([0, 0, 40]),
+                np.array([179, 80, 210])
+            ),
+
+            # light grey / white mould
+            (
+                np.array([0, 0, 150]),
+                np.array([179, 65, 245])
             )
         ],
 
         "peach": [
+            # dark bruise / rot
             (
-                np.array([0, 0, 0]),
-                np.array([179, 255, 60])
+                np.array([0, 20, 0]),
+                np.array([25, 255, 105])
             ),
+
+            # grey mould
             (
-                np.array([5, 35, 0]),
-                np.array([20, 255, 105])
+                np.array([0, 0, 40]),
+                np.array([179, 80, 210])
+            ),
+
+            # light grey / white mould
+            (
+                np.array([0, 0, 150]),
+                np.array([179, 65, 245])
             )
         ],
 
         "pear": [
+            # dark bruise / rot
             (
-                np.array([0, 0, 0]),
-                np.array([179, 255, 65])
+                np.array([0, 20, 0]),
+                np.array([25, 255, 110])
             ),
+
+            # grey mould
             (
-                np.array([5, 35, 0]),
-                np.array([18, 255, 110])
+                np.array([0, 0, 40]),
+                np.array([179, 80, 210])
             ),
+
+            # light mould
             (
-                np.array([35, 20, 20]),    # possible mold / green-blue patch
-                np.array([100, 170, 170])
+                np.array([0, 0, 150]),
+                np.array([179, 65, 245])
+            )
+        ],
+
+        "pineapple": [
+            # dark / brown damaged areas
+            (
+                np.array([0, 20, 0]),
+                np.array([25, 255, 110])
+            ),
+
+            # grey mould
+            (
+                np.array([0, 0, 40]),
+                np.array([179, 80, 210])
+            ),
+
+            # light grey / white mould
+            (
+                np.array([0, 0, 150]),
+                np.array([179, 65, 245])
+            )
+        ],
+
+        "watermelon": [
+            # dark damaged areas
+            (
+                np.array([0, 20, 0]),
+                np.array([25, 255, 100])
+            ),
+
+            # grey mould
+            (
+                np.array([0, 0, 40]),
+                np.array([179, 80, 210])
+            ),
+
+            # light grey / white mould
+            (
+                np.array([0, 0, 150]),
+                np.array([179, 65, 245])
             )
         ]
     }
 
-    return fruit_ranges.get(fruit_type, default_ranges)
+    return fruit_hsv_ranges.get(
+        fruit_type,
+        default_ranges
+    )
 
 
 # ============================================================
@@ -185,7 +310,6 @@ def remove_small_components(binary_mask, min_area=60):
 # ============================================================
 # HELPER: CREATE OVERLAY IMAGE
 # ============================================================
-
 def create_blemish_overlay(image, blemish_mask):
     """
     Overlay blemish regions in red on the original image.
@@ -199,18 +323,27 @@ def create_blemish_overlay(image, blemish_mask):
 
     output = image.copy()
 
-    red_layer = np.zeros_like(output)
-    red_layer[:] = (0, 0, 255)
-
+    # Find blemish pixels
     mask_indices = blemish_mask > 0
 
-    output[mask_indices] = cv2.addWeighted(
-        output[mask_indices],
+    # If no blemish was detected, just return original image
+    if not np.any(mask_indices):
+        return output
+
+    purple_layer = np.zeros_like(output)
+    purple_layer[:] = (255, 0, 255)
+
+    blended = cv2.addWeighted(
+        output,
         0.35,
-        red_layer[mask_indices],
+        purple_layer,
         0.65,
         0
     )
+
+    output[mask_indices] = blended[
+        mask_indices
+    ]
 
     return output
 
@@ -263,6 +396,74 @@ def detect_fruit_blemish(
 
     fruit_mask_binary = ensure_binary_mask(fruit_mask)
 
+    cv2.imshow(
+        "DEBUG - Fruit Mask Used by Blemish",
+        fruit_mask_binary
+    )
+
+    # ========================================================
+    # FILL INTERNAL HOLES IN FRUIT MASK
+    # ========================================================
+    # Add black border so flood fill always starts
+    # from background
+    padded_mask = cv2.copyMakeBorder(
+        fruit_mask_binary,
+        1,
+        1,
+        1,
+        1,
+        cv2.BORDER_CONSTANT,
+        value=0
+    )
+
+    flood_filled = padded_mask.copy()
+
+    flood_mask = np.zeros(
+        (
+            padded_mask.shape[0] + 2,
+            padded_mask.shape[1] + 2
+        ),
+        dtype=np.uint8
+    )
+
+    # Fill the outside background
+    cv2.floodFill(
+        flood_filled,
+        flood_mask,
+        (0, 0),
+        255
+    )
+
+    # Invert to obtain only internal holes
+    internal_holes = cv2.bitwise_not(
+        flood_filled
+    )
+
+    # Add internal holes back into fruit
+    filled_mask = cv2.bitwise_or(
+        padded_mask,
+        internal_holes
+    )
+
+    # Remove temporary border
+    fruit_mask_binary = filled_mask[
+        1:-1,
+        1:-1
+    ]
+
+    # Slightly shrink fruit mask to avoid
+    # dark boundary pixels being detected as blemishes
+    erosion_kernel = cv2.getStructuringElement(
+        cv2.MORPH_ELLIPSE,
+        (5, 5)
+    )
+
+    fruit_mask_binary = cv2.erode(
+        fruit_mask_binary,
+        erosion_kernel,
+        iterations=1
+    )
+
     hsv_image = cv2.cvtColor(
         image,
         cv2.COLOR_BGR2HSV
@@ -292,6 +493,11 @@ def detect_fruit_blemish(
     blemish_mask = cv2.bitwise_and(
         combined_mask,
         fruit_mask_binary
+    )
+
+    cv2.imshow(
+        "DEBUG - HSV Blemish Before Cleanup",
+        blemish_mask
     )
 
     # Morphological cleanup
@@ -338,6 +544,24 @@ def detect_fruit_blemish(
     else:
         blemish_percentage = 0.0
 
+#    # ========================================================
+#    # BLEMISH REVIEW STATUS
+#    # ========================================================
+#    if blemish_percentage < 1.0:
+#        review_status = (
+#            "No Significant Blemish Detected"
+#        )
+#
+#    elif blemish_percentage <= 15.0:
+#        review_status = (
+#            "Review Required"
+#        )
+#
+#    else:
+#        review_status = (
+#            "Significant Blemish Detected"
+#        )
+
     overlay_image = create_blemish_overlay(
         image,
         blemish_mask
@@ -349,5 +573,6 @@ def detect_fruit_blemish(
         "blemish_overlay": overlay_image,
         "blemish_area_pixels": blemish_pixels,
         "fruit_area_pixels": fruit_pixels,
-        "blemish_percentage": blemish_percentage
+        "blemish_percentage": blemish_percentage,
+        #"review_status": review_status
     }

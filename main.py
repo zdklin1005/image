@@ -1,3 +1,4 @@
+import traceback
 import cv2
 from tkinter import Tk, filedialog
 
@@ -40,6 +41,7 @@ from fruit_ripeness_object_detection.fruit_detection import (
     detect_with_model_c,
     detect_with_model_d,
     fuse_detections,
+    assess_detection_quality,
     draw_final_detections,
     crop_all_detected_fruits
 )
@@ -71,13 +73,232 @@ def resize_for_display(image, max_width=1200, max_height=850):
         interpolation=cv2.INTER_LINEAR
     )
 
+
+def boxes_represent_same_region(
+    first_box,
+    second_box,
+    minimum_iou=0.25,
+    minimum_smaller_box_coverage=0.60
+):
+    """Check whether two boxes most likely describe the same fruit region."""
+    first_x1, first_y1, first_x2, first_y2 = first_box
+    second_x1, second_y1, second_x2, second_y2 = second_box
+
+    intersection_width = max(
+        0,
+        min(first_x2, second_x2)
+        - max(first_x1, second_x1)
+    )
+    intersection_height = max(
+        0,
+        min(first_y2, second_y2)
+        - max(first_y1, second_y1)
+    )
+    intersection_area = intersection_width * intersection_height
+    first_area = max(0, first_x2 - first_x1) * max(
+        0,
+        first_y2 - first_y1
+    )
+    second_area = max(0, second_x2 - second_x1) * max(
+        0,
+        second_y2 - second_y1
+    )
+    union_area = first_area + second_area - intersection_area
+    smaller_area = min(first_area, second_area)
+
+    iou = (
+        intersection_area / union_area
+        if union_area > 0
+        else 0.0
+    )
+    smaller_box_coverage = (
+        intersection_area / smaller_area
+        if smaller_area > 0
+        else 0.0
+    )
+
+    first_width = max(1, first_x2 - first_x1)
+    first_height = max(1, first_y2 - first_y1)
+    second_width = max(1, second_x2 - second_x1)
+    second_height = max(1, second_y2 - second_y1)
+    first_center_x = (first_x1 + first_x2) / 2.0
+    first_center_y = (first_y1 + first_y2) / 2.0
+    second_center_x = (second_x1 + second_x2) / 2.0
+    second_center_y = (second_y1 + second_y2) / 2.0
+    horizontal_center_distance = abs(
+        first_center_x - second_center_x
+    ) / min(first_width, second_width)
+    vertical_center_distance = abs(
+        first_center_y - second_center_y
+    ) / min(first_height, second_height)
+    centers_are_aligned = (
+        horizontal_center_distance <= 0.35
+        and vertical_center_distance <= 0.35
+    )
+
+    return (
+        centers_are_aligned
+        and (
+            iou >= minimum_iou
+            or smaller_box_coverage
+            >= minimum_smaller_box_coverage
+        )
+    )
+
+
+def draw_ripeness_results(
+    image,
+    ripeness_results
+):
+    """Draw final ripeness result for evaluated fruits."""
+
+    output_image = image.copy()
+
+    for result in ripeness_results:
+
+        if (
+            result.get("final_ripeness") is None
+            or result.get("final_confidence") is None
+        ):
+            continue
+
+        x1, y1, x2, y2 = result["bounding_box"]
+
+        final_label = (
+            f"{result['final_ripeness']} "
+            f"{result['final_confidence'] * 100:.2f}%"
+        )
+
+        cv2.rectangle(
+            output_image,
+            (x1, y1),
+            (x2, y2),
+            (0, 0, 255),
+            3
+        )
+
+        (text_width, text_height), baseline = (
+            cv2.getTextSize(
+                final_label,
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                2
+            )
+        )
+
+        text_x = x1
+        text_y = max(
+            y1 - 10,
+            text_height + 10
+        )
+
+        cv2.rectangle(
+            output_image,
+            (
+                text_x,
+                text_y - text_height - 8
+            ),
+            (
+                text_x + text_width + 8,
+                text_y + baseline
+            ),
+            (0, 0, 255),
+            -1
+        )
+
+        cv2.putText(
+            output_image,
+            final_label,
+            (
+                text_x + 4,
+                text_y - 4
+            ),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 0, 0),
+            2,
+            cv2.LINE_AA
+        )
+
+    return output_image
+
+#def draw_ripeness_results(
+#    image,
+#    ripeness_results,
+#    detection_only_boxes=None
+#):
+#    """Draw boxes only for fruits that received a ripeness result."""
+#    output_image = image.copy()
+#    excluded_boxes = detection_only_boxes or []
+#
+#    for result in ripeness_results:
+#        if (
+#            not result.get("ripeness_supported", False)
+#            or result.get("final_ripeness") is None
+#            or result.get("final_confidence") is None
+#        ):
+#            continue
+#
+#        if any(
+#            boxes_represent_same_region(
+#                result["bounding_box"],
+#                excluded_box
+#            )
+#            for excluded_box in excluded_boxes
+#        ):
+#            continue
+#
+#        x1, y1, x2, y2 = result["bounding_box"]
+#        final_label = (
+#            f"{result['final_ripeness']} "
+#            f"{result['final_confidence'] * 100:.2f}%"
+#        )
+#
+#        cv2.rectangle(
+#            output_image,
+#            (x1, y1),
+#            (x2, y2),
+#            (0, 0, 255),
+#            3
+#        )
+#
+#        (text_width, text_height), baseline = cv2.getTextSize(
+#            final_label,
+#            cv2.FONT_HERSHEY_SIMPLEX,
+#            0.6,
+#            2
+#        )
+#        text_x = x1
+#        text_y = max(y1 - 10, text_height + 10)
+#
+#        cv2.rectangle(
+#            output_image,
+#            (text_x, text_y - text_height - 8),
+#            (text_x + text_width + 8, text_y + baseline),
+#            (0, 0, 255),
+#            -1
+#        )
+#
+#        cv2.putText(
+#            output_image,
+#            final_label,
+#            (text_x + 4, text_y - 4),
+#            cv2.FONT_HERSHEY_SIMPLEX,
+#            0.6,
+#            (0, 0, 0),
+#            2,
+#            cv2.LINE_AA
+#        )
+#
+#    return output_image
+
 def run_fruit_assessment(
     image_path,
     calibration_mode=False,
     reference_width_cm=None,
     reference_height_cm=None,
     target_pixels_per_cm=20,
-    use_watershed=False
+    use_watershed=True
 ):
     """
     Run the integrated fruit image-processing pipeline.
@@ -145,6 +366,26 @@ def run_fruit_assessment(
         "output_size"
     ]
 
+    valid_content_bbox = preprocessing_results[
+        "valid_content_bbox"
+    ]
+
+    preprocessing_suitability = preprocessing_results[
+        "preprocessing_suitability"
+    ]
+
+    blur_status = preprocessing_results[
+        "blur_status"
+    ]
+
+    exposure_status = preprocessing_results[
+        "exposure_status"
+    ]
+
+    contrast_status = preprocessing_results[
+        "contrast_status"
+    ]
+
     print("\nImage Preprocessing")
     print("------------------------------")
 
@@ -176,6 +417,23 @@ def run_fruit_assessment(
     print(
         f"Bright pixels   : "
         f"{bright_pixel_ratio:.2%}"
+    )
+
+    print(
+        f"Preprocessing suitability: "
+        f"{preprocessing_suitability}"
+    )
+
+    print(
+        f"Blur: {blur_status}"
+    )
+
+    print(
+        f"Exposure: {exposure_status}"
+    )
+
+    print(
+        f"Contrast: {contrast_status}"
     )
 
     print(
@@ -264,6 +522,13 @@ def run_fruit_assessment(
         iou_threshold=0.30
     )
 
+    final_detections = assess_detection_quality(
+        final_detections,
+        classification_image.shape,
+        valid_content_bbox=valid_content_bbox,
+        retain_rejected=True,
+    )
+
     # ========================================================
     # FRUIT DETECTION RESULTS
     # ========================================================
@@ -314,6 +579,21 @@ def run_fruit_assessment(
             print(
                 f"Agreement   : "
                 f"{detection['agreement']}"
+            )
+
+            print(
+                f"Reliability : "
+                f"{detection['reliability_status']}"
+            )
+
+            print(
+                f"Box quality : "
+                f"{detection['box_status']}"
+            )
+
+            print(
+                f"Support     : "
+                f"{detection['support_level']}"
             )
 
             if "iou" in detection:
@@ -596,7 +876,7 @@ def run_fruit_assessment(
         ) = apply_watershed_segmentation(
             working_image,
             refined_mask,
-            foreground_ratio=0.4
+            foreground_ratio=0.55
         )
 
         measurement_mask = separated_mask
@@ -738,6 +1018,18 @@ def run_fruit_assessment(
             start=1
         ):
 
+            if detection.get("reliability_status") == "Rejected":
+                print(
+                    f"\nFruit ROI {index} skipped: "
+                    + "; ".join(
+                        detection.get(
+                            "reliability_reasons",
+                            ["Detection was rejected"],
+                        )
+                    )
+                )
+                continue
+
             try:
 
                 roi_result = process_fruit_roi(
@@ -745,7 +1037,33 @@ def run_fruit_assessment(
                     detection[
                         "bounding_box"
                     ],
-                    use_watershed=False
+                    use_watershed=use_watershed,
+                    global_refined_mask=refined_mask
+                )
+
+                print(
+                    f"Bounding box : "
+                    f"{roi_result['bounding_box']}"
+                )
+
+                print(
+                    f"Watershed    : "
+                    f"{'Enabled' if roi_result.get('watershed_used', False) else 'Disabled'}"
+                )
+
+                if roi_result.get(
+                    "fruit_labels"
+                ) is not None:
+
+                    print(
+                        f"Regions      : "
+                        f"{len(roi_result['fruit_labels'])}"
+                    )
+
+                print(
+                    f"ROI area     : "
+                    f"{roi_result['fruit_area_pixels']} "
+                    f"pixels^2"
                 )
 
                 # ============================================
@@ -780,6 +1098,53 @@ def run_fruit_assessment(
                     "model_c_ripeness"
                 ] = detection.get(
                     "model_c_ripeness"
+                )
+
+                roi_result[
+                    "detection_reliability"
+                ] = detection.get(
+                    "reliability_status"
+                )
+
+                roi_result[
+                    "ripeness_supported"
+                ] = detection.get(
+                    "ripeness_supported",
+                    False
+                )
+
+                roi_result[
+                    "defect_supported"
+                ] = detection.get(
+                    "defect_supported",
+                    False
+                )
+
+                BLEMISH_SUPPORTED_FRUITS = {
+                    "apple",
+                    "banana",
+                    "grape",
+                    "mango",
+                    "melon",
+                    "orange",
+                    "peach",
+                    "pear",
+                    "pineapple",
+                    "watermelon"
+                }
+
+                roi_result[
+                    "blemish_supported"
+                ] = (
+                    str(detection["fruit_type"]).strip().lower()
+                    in BLEMISH_SUPPORTED_FRUITS
+                )
+
+                roi_result[
+                    "support_level"
+                ] = detection.get(
+                    "support_level",
+                    "Detection only"
                 )
 
                 roi_results.append(
@@ -869,7 +1234,7 @@ def run_fruit_assessment(
     ripeness_results = []
 
     # Image for final ripeness results
-    ripeness_image = working_image.copy()
+    ripeness_image = fruit_only_colour.copy()
 
     if len(roi_results) == 0:
         print(
@@ -893,6 +1258,43 @@ def run_fruit_assessment(
             x1, y1, x2, y2 = (
                 bounding_box
             )
+
+            if not roi_result.get(
+                "ripeness_supported",
+                False
+            ):
+                roi_result["ripeness"] = None
+                roi_result["ripeness_confidence"] = None
+                roi_result["ripeness_status"] = (
+                    "Not evaluated - detection only"
+                )
+
+                print(
+                    f"Fruit {index}"
+                )
+
+                print(
+                    f"Fruit Type : "
+                    f"{fruit_type}"
+                )
+
+                print(
+                    "Ripeness   : "
+                    "Not evaluated - detection only\n"
+                )
+
+                continue
+
+            #if not roi_result.get(
+            #    "ripeness_supported",
+            #    False
+            #):
+            #    roi_result["ripeness"] = None
+            #    roi_result["ripeness_confidence"] = None
+            #    roi_result["ripeness_status"] = (
+            #        "Not evaluated - detection only"
+            #    )
+            #    continue
 
             # =================================================
             # GET FRUIT ROI
@@ -978,6 +1380,10 @@ def run_fruit_assessment(
                 "fruit_index": index,
 
                 "fruit_type": fruit_type,
+
+                "ripeness_supported": True,
+
+                "evaluation_status": "Evaluated",
 
                 "bounding_box": (
                     bounding_box
@@ -1113,70 +1519,20 @@ def run_fruit_assessment(
                 f"({final_ripeness['confidence'] * 100:.2f}%)\n"
             )
 
-            # =================================================
-            # DRAW FINAL RIPENESS RESULT
-            # =================================================
-
-            final_label = (
-                f"{final_ripeness['ripeness']} "
-                f"{final_ripeness['confidence'] * 100:.2f}%"
-            )
-
-            # Draw fruit bounding box
-            cv2.rectangle(
-                ripeness_image,
-                (x1, y1),
-                (x2, y2),
-                (0, 0, 255),
-                3
-            )
-
-            # Get text size
-            (text_width, text_height), baseline = (
-                cv2.getTextSize(
-                    final_label,
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
-                    2
-                )
-            )
-
-            # Position label above bounding box
-            text_x = x1
-            text_y = max(
-                y1 - 10,
-                text_height + 10
-            )
-
-            # Draw background behind text
-            cv2.rectangle(
-                ripeness_image,
-                (
-                    text_x,
-                    text_y - text_height - 8
-                ),
-                (
-                    text_x + text_width + 8,
-                    text_y + baseline
-                ),
-                (0, 0, 255),
-                -1
-            )
-
-            # Draw final ripeness text
-            cv2.putText(
-                ripeness_image,
-                final_label,
-                (
-                    text_x + 4,
-                    text_y - 4
-                ),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (0, 0, 0),
-                2,
-                cv2.LINE_AA
-            )
+    # Build the ripeness image exclusively from evaluated ripeness results.
+    # Detection-only fruits therefore cannot receive a ripeness boundary.
+    ripeness_image = draw_ripeness_results(
+        fruit_only_colour,
+        ripeness_results,
+        #detection_only_boxes=[
+        #    detection["bounding_box"]
+        #    for detection in final_detections
+        #    if not detection.get(
+        #        "ripeness_supported",
+        #        False
+        #    )
+        #]
+    )
 
 #    # ========================================================
 #    # DISPLAY FINAL RIPENESS IMAGE
@@ -1216,68 +1572,161 @@ def run_fruit_assessment(
 #        cv2.waitKey(0)
 #        cv2.destroyAllWindows()
 
-#    # ========================================================
-#    # MEMBER 3: BLEMISH ANALYSIS
-#    # ========================================================
-#    blemish_results = None
-#
-#    if len(detections) == 0:
-#
-#        print("\nBlemish Analysis")
-#        print("------------------------------")
-#        print("Skipped - no detected fruit class available.")
-#
-#    else:
-#        # Use the highest-confidence detection
-#        primary_detection = max(
-#            detections,
-#            key=lambda detection: detection["confidence"]
-#        )
-#
-#        primary_fruit_type = primary_detection[
-#            "fruit_type"
-#        ]
-#
-#        try:
-#            blemish_results = detect_fruit_blemish(
-#                image=working_image,
-#                fruit_mask=fruit_mask,
-#                fruit_type=primary_fruit_type,
-#                opening_kernel_size=3,
-#                closing_kernel_size=5,
-#                min_component_area=60
-#            )
-#
-#        except (TypeError, ValueError, cv2.error) as error:
-#            print(
-#                "\nBlemish Analysis"
-#            )
-#            print(
-#                "------------------------------"
-#            )
-#            print(
-#                "Skipped - blemish analysis failed:"
-#            )
-#            print(error)
-#
-#            blemish_results = None
-#
-#    if blemish_results is not None:
-#        
-#        print("\nBlemish Analysis")
-#        print("------------------------------")
-#        print(
-#            f"Fruit type used    : "
-#            f"{blemish_results['fruit_type_used']}"
-#        )
-#        print(
-#            f"Blemish area       : "
-#            f"{blemish_results['blemish_area_pixels']} pixels^2"
-#        )
-#        print(
-#            f"Blemish Percentage : "
-#            f"{blemish_results['blemish_percentage']:.2f}%"
-#        )
+    # ========================================================
+    # MEMBER 3: BLEMISH ANALYSIS
+    # ========================================================
+
+    print("\nBlemish Analysis")
+    print("------------------------------")
+
+    blemish_results = []
+
+    if len(roi_results) == 0:
+        print(
+            "Skipped - no segmented fruit ROIs available."
+        )
+
+    else:
+        for roi_result in roi_results:
+            fruit_index = roi_result[
+                "fruit_index"
+            ]
+
+            fruit_type = roi_result[
+                "fruit_type"
+            ]
+
+            # Only analyse fruits supported for defect detection
+            if not roi_result.get(
+                "blemish_supported",
+                False
+            ):
+
+                print(
+                    f"Fruit {fruit_index} - "
+                    f"{fruit_type}: "
+                    f"Blemish analysis not supported."
+                )
+
+                continue
+
+            try:
+                # Member 2 ROI image
+                roi_image = roi_result[
+                    "roi_image"
+                ]
+
+                # Member 2 segmented fruit mask
+                roi_fruit_mask = roi_result[
+                    "fruit_mask"
+                ]
+
+                blemish_result = (
+                    detect_fruit_blemish(
+                        image=roi_image,
+                        fruit_mask=roi_fruit_mask,
+                        fruit_type=fruit_type,
+                        opening_kernel_size=3,
+                        closing_kernel_size=5,
+                        min_component_area=60
+                    )
+                )
+
+                #print("\nBlemish Debug")
+                #print("------------------------------")
+                #print("Fruit index :", fruit_index)
+                #print("Fruit type  :", fruit_type)
+                #
+                #print(
+                #    "ROI image   :",
+                #    None if roi_result.get("roi_image") is None
+                #    else roi_result["roi_image"].shape
+                #)
+                #
+                #print(
+                #    "Fruit mask  :",
+                #    None if roi_result.get("fruit_mask") is None
+                #    else roi_result["fruit_mask"].shape
+                #)
+                #
+                #print(
+                #    "Fruit area  :",
+                #    roi_result.get("fruit_area_pixels")
+                #)
+
+                # Add fruit information
+                blemish_result[
+                    "fruit_index"
+                ] = fruit_index
+
+                blemish_result[
+                    "fruit_type"
+                ] = fruit_type
+
+                blemish_result[
+                    "bounding_box"
+                ] = roi_result[
+                    "bounding_box"
+                ]
+
+                blemish_results.append(
+                    blemish_result
+                )
+
+                # Attach back to ROI result
+                roi_result[
+                    "blemish_percentage"
+                ] = blemish_result[
+                    "blemish_percentage"
+                ]
+
+                roi_result[
+                    "blemish_area_pixels"
+                ] = blemish_result[
+                    "blemish_area_pixels"
+                ]
+
+                print(
+                    f"Fruit {fruit_index}"
+                )
+
+                print(
+                    f"Fruit Type         : "
+                    f"{fruit_type}"
+                )
+
+                print(
+                    f"Fruit area         : "
+                    f"{blemish_result['fruit_area_pixels']} "
+                    f"pixels^2"
+                )
+
+                print(
+                    f"Blemish area       : "
+                    f"{blemish_result['blemish_area_pixels']} "
+                    f"pixels^2"
+                )
+
+                print(
+                    f"Blemish Percentage : "
+                    f"{blemish_result['blemish_percentage']:.2f}%\n"
+                )
+
+            except (
+                KeyError,
+                TypeError,
+                ValueError,
+                cv2.error
+            ) as error:
+
+                print(
+                    f"\nFruit {fruit_index} "
+                    f"blemish analysis failed:"
+                )
+
+                print(error)
+
+                traceback.print_exc()
 
     # ========================================================
     # RETURN RESULTS
@@ -1327,6 +1776,11 @@ def run_fruit_assessment(
     "blur_score": blur_score,
     "is_blurry": is_blurry,
 
+    "preprocessing_suitability": preprocessing_suitability,
+    "blur_status": blur_status,
+    "exposure_status": exposure_status,
+    "contrast_status": contrast_status,
+
     "mean_brightness": mean_brightness,
     "contrast_score": contrast_score,
     "dynamic_range": dynamic_range,
@@ -1349,6 +1803,8 @@ def run_fruit_assessment(
 
     "ripeness_results": ripeness_results,
     "ripeness_image": ripeness_image,
+
+    "blemish_results": blemish_results,
 
 #    "blemish_mask": (
 #        blemish_results["blemish_mask"]
@@ -1401,7 +1857,9 @@ if __name__ == "__main__":
         image_path=image_path,
 
         # Kaggle image:
-        calibration_mode=False
+        calibration_mode=False,
+
+        use_watershed=False
     )
 
     # ========================================================
@@ -1456,13 +1914,96 @@ if __name__ == "__main__":
         )
     
         print(
-            "\nPress any key on the Final Ripeness Classification window to end the program."
+            "\nPress any key on the Final Ripeness Classification window to continue."
         )
     
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
 
+    # ========================================================
+    # DISPLAY MEMBER 3 BLEMISH RESULTS
+    # ========================================================
+    
+    for blemish_result in results[
+        "blemish_results"
+    ]:
+    
+        fruit_index = blemish_result[
+            "fruit_index"
+        ]
+    
+        fruit_type = blemish_result[
+            "fruit_type"
+        ]
+    
+        blemish_percentage = blemish_result[
+            "blemish_percentage"
+        ]
+    
+        overlay = blemish_result[
+            "blemish_overlay"
+        ].copy()
+    
+        label = (
+            f"Blemish {blemish_percentage:.2f}%"
+        )
+
+        (text_width, text_height), baseline = cv2.getTextSize(
+            label,
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            2
+        )
+
+        text_x = 10
+        text_y = text_height + 12
+
+        # background rectangle
+        cv2.rectangle(
+            overlay,
+            (text_x, text_y - text_height - 8),
+            (text_x + text_width + 10, text_y + baseline),
+            (255, 0, 255),   # purple background
+            -1
+        )
+
+        # black text
+        cv2.putText(
+            overlay,
+            label,
+            (text_x + 5, text_y - 4),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 0, 0),       # black text
+            2,
+            cv2.LINE_AA
+        )
+    
+        window_name = (
+            f"Fruit {fruit_index} - "
+            f"{fruit_type} Blemish"
+        )
+    
+        cv2.namedWindow(
+            window_name,
+            cv2.WINDOW_NORMAL
+        )
+    
+        cv2.imshow(
+            window_name,
+            overlay
+        )
+    
+    if len(results["blemish_results"]) > 0:
+    
+        print(
+            "\nPress any key on the Blemish Analysis "
+            "windows to end the program."
+        )
+    
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
 
 #    # Blemish calculation
 #    if results["blemish_mask"] is not None:
@@ -1495,4 +2036,3 @@ if __name__ == "__main__":
 #
 #        cv2.waitKey(0)
 #        cv2.destroyAllWindows()
-        

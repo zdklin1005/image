@@ -143,6 +143,51 @@ def calculate_input_quality_metrics(image):
     }
 
 
+def classify_preprocessing_suitability(
+    blur_score,
+    blur_threshold,
+    mean_brightness,
+    contrast_score,
+    dynamic_range,
+    dark_pixel_ratio,
+    bright_pixel_ratio,
+):
+    # Convert numerical quality measurements into four operator-facing labels.
+    blur_status = (
+        "Acceptable"
+        if blur_score >= blur_threshold else "Blurry"
+    )
+
+    if mean_brightness >= 210 or bright_pixel_ratio >= 0.45:
+        exposure_status = "Overexposed"
+    elif mean_brightness <= 55 or dark_pixel_ratio >= 0.40:
+        exposure_status = "Underexposed"
+    else:
+        exposure_status = "Acceptable"
+
+    if contrast_score < 25 or dynamic_range < 50:
+        contrast_status = "Low"
+    else:
+        contrast_status = "Acceptable"
+
+    preprocessing_suitability = (
+        "Acceptable"
+        if (
+            blur_status == "Acceptable"
+            and exposure_status == "Acceptable"
+            and contrast_status == "Acceptable"
+        )
+        else "Review required"
+    )
+
+    return {
+        "preprocessing_suitability": preprocessing_suitability,
+        "blur_status": blur_status,
+        "exposure_status": exposure_status,
+        "contrast_status": contrast_status,
+    }
+
+
 def preprocess_fruit_image(
     image_path,
     median_kernel=5,
@@ -198,6 +243,12 @@ def preprocess_fruit_image(
     # 5. BLUR ASSESSMENT
     blur_score = calculate_blur_score(median_image)
     is_blurry = blur_score < blur_threshold
+
+    suitability_labels = classify_preprocessing_suitability(
+        blur_score=blur_score,
+        blur_threshold=blur_threshold,
+        **quality_metrics,
+    )
 
     # 6. EDGE-PRESERVING BILATERAL DENOISING
     bilateral_image = cv2.bilateralFilter(
@@ -304,5 +355,6 @@ def preprocess_fruit_image(
         "valid_content_bbox": valid_content_bbox,
         "blur_score": blur_score,
         "is_blurry": is_blurry,
+        **suitability_labels,
         **quality_metrics,
     }

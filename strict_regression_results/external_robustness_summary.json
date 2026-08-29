@@ -1,0 +1,85 @@
+{
+  "scope": {
+    "base_images": 13,
+    "variants_per_image": 6,
+    "detector_runs": 78,
+    "missing_inputs": []
+  },
+  "original_external_images": {
+    "images": 13,
+    "expected_class_instances": 36,
+    "detected_expected_classes": 18,
+    "presence_recall": 0.5,
+    "images_with_no_detection": 0,
+    "false_class_predictions": 4,
+    "duplicate_boxes": 17,
+    "preprocessing_not_acceptable": 2
+  },
+  "by_variant": {
+    "bright_140_percent": {
+      "images": 13,
+      "expected_class_instances": 36,
+      "detected_expected_classes": 16,
+      "presence_recall": 0.4444444444444444,
+      "images_with_no_detection": 1,
+      "false_class_predictions": 4,
+      "duplicate_boxes": 13,
+      "preprocessing_not_acceptable": 7
+    },
+    "dark_45_percent": {
+      "images": 13,
+      "expected_class_instances": 36,
+      "detected_expected_classes": 16,
+      "presence_recall": 0.4444444444444444,
+      "images_with_no_detection": 0,
+      "false_class_predictions": 5,
+      "duplicate_boxes": 11,
+      "preprocessing_not_acceptable": 9
+    },
+    "gaussian_blur_9": {
+      "images": 13,
+      "expected_class_instances": 36,
+      "detected_expected_classes": 17,
+      "presence_recall": 0.4722222222222222,
+      "images_with_no_detection": 0,
+      "false_class_predictions": 4,
+      "duplicate_boxes": 17,
+      "preprocessing_not_acceptable": 2
+    },
+    "original": {
+      "images": 13,
+      "expected_class_instances": 36,
+      "detected_expected_classes": 18,
+      "presence_recall": 0.5,
+      "images_with_no_detection": 0,
+      "false_class_predictions": 4,
+      "duplicate_boxes": 17,
+      "preprocessing_not_acceptable": 2
+    },
+    "rotate_15_degrees": {
+      "images": 13,
+      "expected_class_instances": 36,
+      "detected_expected_classes": 15,
+      "presence_recall": 0.4166666666666667,
+      "images_with_no_detection": 1,
+      "false_class_predictions": 3,
+      "duplicate_boxes": 14,
+      "preprocessing_not_acceptable": 2
+    },
+    "salt_pepper_1_percent": {
+      "images": 13,
+      "expected_class_instances": 36,
+      "detected_expected_classes": 18,
+      "presence_recall": 0.5,
+      "images_with_no_detection": 0,
+      "false_class_predictions": 5,
+      "duplicate_boxes": 16,
+      "preprocessing_not_acceptable": 2
+    }
+  },
+  "full_system_original_runs": {
+    "result_rows": 39,
+    "roi_or_downstream_errors": 4,
+    "pipeline_errors": 0
+  }
+}

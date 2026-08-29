@@ -1,0 +1,56 @@
+[
+  {
+    "image": "01_fruit_bowl.jpg",
+    "final_groups_with_model_a": 0,
+    "final_groups_with_model_c": 2,
+    "final_groups_with_model_d": 1,
+    "final_detection_count": 2,
+    "predicted_classes": [
+      "Apple",
+      "Apple"
+    ],
+    "blur_score": 2256.895379174397,
+    "is_blurry": false
+  },
+  {
+    "image": "02_bowl_of_fruit.jpg",
+    "final_groups_with_model_a": 0,
+    "final_groups_with_model_c": 2,
+    "final_groups_with_model_d": 0,
+    "final_detection_count": 2,
+    "predicted_classes": [
+      "Orange",
+      "Apple"
+    ],
+    "blur_score": 990.2726692642873,
+    "is_blurry": false
+  },
+  {
+    "image": "03_culinary_fruits.jpg",
+    "final_groups_with_model_a": 2,
+    "final_groups_with_model_c": 0,
+    "final_groups_with_model_d": 0,
+    "final_detection_count": 2,
+    "predicted_classes": [
+      "Watermelon",
+      "Pineapple"
+    ],
+    "blur_score": 5548.811447745459,
+    "is_blurry": false
+  },
+  {
+    "image": "04_fruits_in_basket.jpg",
+    "final_groups_with_model_a": 0,
+    "final_groups_with_model_c": 4,
+    "final_groups_with_model_d": 3,
+    "final_detection_count": 4,
+    "predicted_classes": [
+      "Apple",
+      "Apple",
+      "Apple",
+      "Apple"
+    ],
+    "blur_score": 5491.827152086628,
+    "is_blurry": false
+  }
+]
