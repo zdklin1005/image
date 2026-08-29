@@ -1,3 +1,4 @@
+import traceback
 import cv2
 from tkinter import Tk, filedialog
 
@@ -1119,6 +1120,26 @@ def run_fruit_assessment(
                     False
                 )
 
+                BLEMISH_SUPPORTED_FRUITS = {
+                    "apple",
+                    "banana",
+                    "grape",
+                    "mango",
+                    "melon",
+                    "orange",
+                    "peach",
+                    "pear",
+                    "pineapple",
+                    "watermelon"
+                }
+
+                roi_result[
+                    "blemish_supported"
+                ] = (
+                    str(detection["fruit_type"]).strip().lower()
+                    in BLEMISH_SUPPORTED_FRUITS
+                )
+
                 roi_result[
                     "support_level"
                 ] = detection.get(
@@ -1247,7 +1268,33 @@ def run_fruit_assessment(
                 roi_result["ripeness_status"] = (
                     "Not evaluated - detection only"
                 )
+
+                print(
+                    f"Fruit {index}"
+                )
+
+                print(
+                    f"Fruit Type : "
+                    f"{fruit_type}"
+                )
+
+                print(
+                    "Ripeness   : "
+                    "Not evaluated - detection only\n"
+                )
+
                 continue
+
+            #if not roi_result.get(
+            #    "ripeness_supported",
+            #    False
+            #):
+            #    roi_result["ripeness"] = None
+            #    roi_result["ripeness_confidence"] = None
+            #    roi_result["ripeness_status"] = (
+            #        "Not evaluated - detection only"
+            #    )
+            #    continue
 
             # =================================================
             # GET FRUIT ROI
@@ -1525,68 +1572,161 @@ def run_fruit_assessment(
 #        cv2.waitKey(0)
 #        cv2.destroyAllWindows()
 
-#    # ========================================================
-#    # MEMBER 3: BLEMISH ANALYSIS
-#    # ========================================================
-#    blemish_results = None
-#
-#    if len(detections) == 0:
-#
-#        print("\nBlemish Analysis")
-#        print("------------------------------")
-#        print("Skipped - no detected fruit class available.")
-#
-#    else:
-#        # Use the highest-confidence detection
-#        primary_detection = max(
-#            detections,
-#            key=lambda detection: detection["confidence"]
-#        )
-#
-#        primary_fruit_type = primary_detection[
-#            "fruit_type"
-#        ]
-#
-#        try:
-#            blemish_results = detect_fruit_blemish(
-#                image=working_image,
-#                fruit_mask=fruit_mask,
-#                fruit_type=primary_fruit_type,
-#                opening_kernel_size=3,
-#                closing_kernel_size=5,
-#                min_component_area=60
-#            )
-#
-#        except (TypeError, ValueError, cv2.error) as error:
-#            print(
-#                "\nBlemish Analysis"
-#            )
-#            print(
-#                "------------------------------"
-#            )
-#            print(
-#                "Skipped - blemish analysis failed:"
-#            )
-#            print(error)
-#
-#            blemish_results = None
-#
-#    if blemish_results is not None:
-#        
-#        print("\nBlemish Analysis")
-#        print("------------------------------")
-#        print(
-#            f"Fruit type used    : "
-#            f"{blemish_results['fruit_type_used']}"
-#        )
-#        print(
-#            f"Blemish area       : "
-#            f"{blemish_results['blemish_area_pixels']} pixels^2"
-#        )
-#        print(
-#            f"Blemish Percentage : "
-#            f"{blemish_results['blemish_percentage']:.2f}%"
-#        )
+    # ========================================================
+    # MEMBER 3: BLEMISH ANALYSIS
+    # ========================================================
+
+    print("\nBlemish Analysis")
+    print("------------------------------")
+
+    blemish_results = []
+
+    if len(roi_results) == 0:
+        print(
+            "Skipped - no segmented fruit ROIs available."
+        )
+
+    else:
+        for roi_result in roi_results:
+            fruit_index = roi_result[
+                "fruit_index"
+            ]
+
+            fruit_type = roi_result[
+                "fruit_type"
+            ]
+
+            # Only analyse fruits supported for defect detection
+            if not roi_result.get(
+                "blemish_supported",
+                False
+            ):
+
+                print(
+                    f"Fruit {fruit_index} - "
+                    f"{fruit_type}: "
+                    f"Blemish analysis not supported."
+                )
+
+                continue
+
+            try:
+                # Member 2 ROI image
+                roi_image = roi_result[
+                    "roi_image"
+                ]
+
+                # Member 2 segmented fruit mask
+                roi_fruit_mask = roi_result[
+                    "fruit_mask"
+                ]
+
+                blemish_result = (
+                    detect_fruit_blemish(
+                        image=roi_image,
+                        fruit_mask=roi_fruit_mask,
+                        fruit_type=fruit_type,
+                        opening_kernel_size=3,
+                        closing_kernel_size=5,
+                        min_component_area=60
+                    )
+                )
+
+                #print("\nBlemish Debug")
+                #print("------------------------------")
+                #print("Fruit index :", fruit_index)
+                #print("Fruit type  :", fruit_type)
+                #
+                #print(
+                #    "ROI image   :",
+                #    None if roi_result.get("roi_image") is None
+                #    else roi_result["roi_image"].shape
+                #)
+                #
+                #print(
+                #    "Fruit mask  :",
+                #    None if roi_result.get("fruit_mask") is None
+                #    else roi_result["fruit_mask"].shape
+                #)
+                #
+                #print(
+                #    "Fruit area  :",
+                #    roi_result.get("fruit_area_pixels")
+                #)
+
+                # Add fruit information
+                blemish_result[
+                    "fruit_index"
+                ] = fruit_index
+
+                blemish_result[
+                    "fruit_type"
+                ] = fruit_type
+
+                blemish_result[
+                    "bounding_box"
+                ] = roi_result[
+                    "bounding_box"
+                ]
+
+                blemish_results.append(
+                    blemish_result
+                )
+
+                # Attach back to ROI result
+                roi_result[
+                    "blemish_percentage"
+                ] = blemish_result[
+                    "blemish_percentage"
+                ]
+
+                roi_result[
+                    "blemish_area_pixels"
+                ] = blemish_result[
+                    "blemish_area_pixels"
+                ]
+
+                print(
+                    f"Fruit {fruit_index}"
+                )
+
+                print(
+                    f"Fruit Type         : "
+                    f"{fruit_type}"
+                )
+
+                print(
+                    f"Fruit area         : "
+                    f"{blemish_result['fruit_area_pixels']} "
+                    f"pixels^2"
+                )
+
+                print(
+                    f"Blemish area       : "
+                    f"{blemish_result['blemish_area_pixels']} "
+                    f"pixels^2"
+                )
+
+                print(
+                    f"Blemish Percentage : "
+                    f"{blemish_result['blemish_percentage']:.2f}%\n"
+                )
+
+            except (
+                KeyError,
+                TypeError,
+                ValueError,
+                cv2.error
+            ) as error:
+
+                print(
+                    f"\nFruit {fruit_index} "
+                    f"blemish analysis failed:"
+                )
+
+                print(error)
+
+                traceback.print_exc()
 
     # ========================================================
     # RETURN RESULTS
@@ -1663,6 +1803,8 @@ def run_fruit_assessment(
 
     "ripeness_results": ripeness_results,
     "ripeness_image": ripeness_image,
+
+    "blemish_results": blemish_results,
 
 #    "blemish_mask": (
 #        blemish_results["blemish_mask"]
@@ -1772,13 +1914,96 @@ if __name__ == "__main__":
         )
     
         print(
-            "\nPress any key on the Final Ripeness Classification window to end the program."
+            "\nPress any key on the Final Ripeness Classification window to continue."
         )
     
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
 
+    # ========================================================
+    # DISPLAY MEMBER 3 BLEMISH RESULTS
+    # ========================================================
+    
+    for blemish_result in results[
+        "blemish_results"
+    ]:
+    
+        fruit_index = blemish_result[
+            "fruit_index"
+        ]
+    
+        fruit_type = blemish_result[
+            "fruit_type"
+        ]
+    
+        blemish_percentage = blemish_result[
+            "blemish_percentage"
+        ]
+    
+        overlay = blemish_result[
+            "blemish_overlay"
+        ].copy()
+    
+        label = (
+            f"Blemish {blemish_percentage:.2f}%"
+        )
+
+        (text_width, text_height), baseline = cv2.getTextSize(
+            label,
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            2
+        )
+
+        text_x = 10
+        text_y = text_height + 12
+
+        # background rectangle
+        cv2.rectangle(
+            overlay,
+            (text_x, text_y - text_height - 8),
+            (text_x + text_width + 10, text_y + baseline),
+            (255, 0, 255),   # purple background
+            -1
+        )
+
+        # black text
+        cv2.putText(
+            overlay,
+            label,
+            (text_x + 5, text_y - 4),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 0, 0),       # black text
+            2,
+            cv2.LINE_AA
+        )
+    
+        window_name = (
+            f"Fruit {fruit_index} - "
+            f"{fruit_type} Blemish"
+        )
+    
+        cv2.namedWindow(
+            window_name,
+            cv2.WINDOW_NORMAL
+        )
+    
+        cv2.imshow(
+            window_name,
+            overlay
+        )
+    
+    if len(results["blemish_results"]) > 0:
+    
+        print(
+            "\nPress any key on the Blemish Analysis "
+            "windows to end the program."
+        )
+    
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
 
 #    # Blemish calculation
 #    if results["blemish_mask"] is not None:
