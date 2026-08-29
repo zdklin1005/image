@@ -11,3 +11,6 @@ calibration_segmentation/outputs/*
 
 # Calibration/segmentation test images
 calibration_segmentation/test_images/*
+
+#IGNORE THIS
+.streamlit/secrets.toml
