@@ -17,7 +17,7 @@ from fruit_ripeness_object_detection.fruit_detection import (
     fuse_detections,
 )
 from preprocessing import preprocess_fruit_image
-from preprocessing.tiled_preprocessing import (
+from fruit_ripeness_object_detection.tiled_detection import (
     create_overlapping_tiles,
     map_tile_detections_to_standard_image,
 )

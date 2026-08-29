@@ -20,7 +20,7 @@ from fruit_ripeness_object_detection.fruit_detection import (
     fuse_detections,
 )
 from preprocessing import preprocess_fruit_image
-from preprocessing.evaluate_tiled_detection import (
+from fruit_ripeness_object_detection.evaluate_tiled_detection import (
     load_single_fruit_regression_sample,
 )
 
