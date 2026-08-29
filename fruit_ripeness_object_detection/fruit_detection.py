@@ -55,7 +55,43 @@ SUPPORTED_FRUITS = {
     "orange",
     "peach",
     "pear",
+    "pineapple",
+    "watermelon",
 }
+
+RIPENESS_SUPPORTED_FRUITS = {
+    "apple",
+    "banana",
+    "grape",
+    "mango",
+    "melon",
+    "orange",
+    "peach",
+    "pear",
+}
+
+DEFECT_SUPPORTED_FRUITS = set(
+    RIPENESS_SUPPORTED_FRUITS
+)
+
+MODEL_A_EXTENSION_FRUITS = {
+    "pineapple",
+    "watermelon",
+}
+
+# Model A has no Peach or Mango class.  When the two detectors that do
+# contain those classes agree on one of them, an unsupported Model A class
+# (for example Apple or Orange) should not override that evidence.
+MODEL_C_D_PRIORITY_FRUITS = {
+    "mango",
+    "peach",
+}
+
+MODEL_C_D_PRIORITY_MINIMUM_CONFIDENCE = 0.70
+
+# Backwards-compatible name for code that only checks whether a fruit can be
+# detected. Analysis capabilities are exposed separately below.
+SUPPORTED_FRUITS = DETECTION_SUPPORTED_FRUITS
 
 CLASS_CONFIDENCE_THRESHOLDS = {
     "apple": 0.30,
@@ -588,19 +624,63 @@ def fuse_detections(
                 + detection["confidence"]
             )
 
-        winning_class = max(
-            class_votes,
-            key=lambda fruit_class: (
-                class_votes[fruit_class],
-                max(
-                    detection["confidence"]
-                    for detection in best_by_model.values()
-                    if normalise_fruit_name(
-                        detection["fruit_type"]
-                    ) == fruit_class
-                ),
-            ),
+        model_a_detection = best_by_model.get("A")
+        model_a_class = (
+            normalise_fruit_name(
+                model_a_detection["fruit_type"]
+            )
+            if model_a_detection is not None
+            else None
         )
+
+        model_c_detection = best_by_model.get("C")
+        model_d_detection = best_by_model.get("D")
+        model_c_class = (
+            normalise_fruit_name(model_c_detection["fruit_type"])
+            if model_c_detection is not None else None
+        )
+        model_d_class = (
+            normalise_fruit_name(model_d_detection["fruit_type"])
+            if model_d_detection is not None else None
+        )
+
+        # Targeted configuration-only correction for Peach/Mango.  This is
+        # deliberately limited to a C+D agreement and does not alter normal
+        # voting for the other fruit classes.
+        model_c_d_priority_class = (
+            model_c_class
+            if (
+                model_c_class == model_d_class
+                and model_c_class in MODEL_C_D_PRIORITY_FRUITS
+                and model_c_detection["confidence"]
+                    + model_d_detection["confidence"]
+                    >= MODEL_C_D_PRIORITY_MINIMUM_CONFIDENCE
+            )
+            else None
+        )
+
+        # Model A is the only detector trained for pineapple and watermelon.
+        # When it identifies either extension fruit in a spatial group, retain
+        # that class instead of allowing Models C/D (which do not contain those
+        # classes) to relabel it as a visually similar core fruit.
+        if model_a_class in MODEL_A_EXTENSION_FRUITS:
+            winning_class = model_a_class
+        elif model_c_d_priority_class is not None:
+            winning_class = model_c_d_priority_class
+        else:
+            winning_class = max(
+                class_votes,
+                key=lambda fruit_class: (
+                    class_votes[fruit_class],
+                    max(
+                        detection["confidence"]
+                        for detection in best_by_model.values()
+                        if normalise_fruit_name(
+                            detection["fruit_type"]
+                        ) == fruit_class
+                    ),
+                ),
+            )
 
         winning_detections = [
             detection
@@ -645,7 +725,6 @@ def fuse_detections(
             for second_index in range(first_index + 1, len(group))
         ]
 
-        model_c_detection = best_by_model.get("C")
         model_c_fruit_class = (
             normalise_fruit_name(model_c_detection["fruit_type"])
             if model_c_detection is not None else None

@@ -1,7 +1,7 @@
 """Reproduce the classification-based preprocessing tuning experiments.
 
 This evaluation utility is intentionally separate from the runtime pipeline.
-It compares four preprocessing variants, runs the existing YOLO detector, and
+It compares five preprocessing variants, runs the existing YOLO detector, and
 writes one auditable CSV record for every image/variant combination.
 
 Default experiments:
@@ -9,8 +9,8 @@ Default experiments:
 * primary: 6 supported folders x 5 image categories x 3 images = 90 images
 * archive: 8 supported folders x 10 images = 80 images
 
-Each selected image is evaluated using four preprocessing variants, producing
-360 primary rows and 320 archive rows with the default settings.
+Each selected image is evaluated using five preprocessing variants, producing
+450 primary rows and 400 archive rows with the default settings.
 """
 
 import argparse
@@ -69,6 +69,7 @@ VARIANT_ORDER = (
     "median3_bilateral",
     "median5_bilateral",
     "median3_clahe",
+    "median5_clahe",
 )
 
 
@@ -205,7 +206,7 @@ def select_archive_images(archive_root, images_per_folder=10):
 
 
 def create_preprocessing_variants(image_path):
-    """Create the four image variants used by the tuning experiment."""
+    """Create the five image variants used by the tuning experiment."""
     median3_results = preprocess_fruit_image(
         image_path,
         median_kernel=3,
@@ -215,59 +216,109 @@ def create_preprocessing_variants(image_path):
         median_kernel=5,
     )
 
-    return {
+    variants = {
         "resized_only": median3_results["original_image"],
         "median3_bilateral": median3_results["bilateral_image"],
         "median5_bilateral": median5_results["bilateral_image"],
         "median3_clahe": median3_results["analysis_image"],
+        "median5_clahe": median5_results["analysis_image"],
     }
 
+    return variants, median3_results["valid_content_bbox"]
 
-def select_prediction(result, model, parse_class_name):
-    """Use the highest-confidence YOLO box as the image-level prediction."""
-    if result.boxes is None or len(result.boxes) == 0:
-        return {
-            "predicted_fruit": "",
-            "predicted_ripeness": "",
-            "confidence": 0.0,
-            "detected": False,
+
+def detect_variants(
+    variants,
+    confidence_threshold,
+    valid_content_bbox,
+):
+    """Evaluate every variant with the current integrated model gates."""
+    from fruit_ripeness_object_detection.fruit_detection import (
+        assess_detection_quality,
+        detect_with_model_a,
+        detect_with_model_c,
+        detect_with_model_d,
+        fuse_detections,
+    )
+    from fruit_ripeness_object_detection.ripeness_classification import (
+        classify_with_model_b,
+        classify_with_model_e,
+        fuse_ripeness,
+    )
+
+    predictions = {}
+
+    for variant_name in VARIANT_ORDER:
+        image = variants[variant_name]
+        detections_a = detect_with_model_a(
+            image,
+            confidence_threshold,
+        )
+        detections_c = detect_with_model_c(
+            image,
+            confidence_threshold,
+        )
+        detections_d = detect_with_model_d(
+            image,
+            confidence_threshold,
+        )
+        detections = fuse_detections(
+            detections_a,
+            detections_c,
+            detections_d,
+            iou_threshold=0.30,
+        )
+        detections = assess_detection_quality(
+            detections,
+            image.shape,
+            valid_content_bbox=valid_content_bbox,
+            retain_rejected=False,
+        )
+
+        if not detections:
+            predictions[variant_name] = {
+                "predicted_fruit": "",
+                "predicted_ripeness": "",
+                "confidence": 0.0,
+                "detected": False,
+            }
+            continue
+
+        detection = max(
+            detections,
+            key=lambda item: item["confidence"],
+        )
+        x1, y1, x2, y2 = detection["bounding_box"]
+        fruit_roi = image[y1:y2, x1:x2].copy()
+        predicted_ripeness = ""
+
+        if (
+            detection.get("ripeness_supported", False)
+            and fruit_roi.size > 0
+        ):
+            model_b_result = classify_with_model_b(
+                fruit_roi,
+                detection["fruit_type"],
+            )
+            model_e_result = classify_with_model_e(
+                fruit_roi,
+            )
+            ripeness_result = fuse_ripeness(
+                model_b_result,
+                detection.get("model_c_ripeness"),
+                detection.get("confidence_c"),
+                model_e_result,
+            )
+            predicted_ripeness = ripeness_result["ripeness"]
+
+        predictions[variant_name] = {
+            "predicted_fruit": detection["fruit_type"],
+            "predicted_ripeness": predicted_ripeness,
+            "confidence": detection["confidence"],
+            "detected": True,
         }
 
-    confidences = result.boxes.conf.cpu().numpy()
-    best_index = int(confidences.argmax())
-    class_id = int(result.boxes.cls[best_index])
-    confidence = float(confidences[best_index])
-    fruit_type, ripeness = parse_class_name(model.names[class_id])
-
-    return {
-        "predicted_fruit": fruit_type,
-        "predicted_ripeness": ripeness,
-        "confidence": confidence,
-        "detected": True,
-    }
-
-
-def detect_variants(variants, confidence_threshold):
-    """Run all four variants as one YOLO prediction batch."""
-    from fruit_ripeness_object_detection.detection import (
-        model,
-        parse_class_name,
-    )
-
-    predictions = model.predict(
-        source=[variants[name] for name in VARIANT_ORDER],
-        conf=confidence_threshold,
-        verbose=False,
-    )
-
-    return {
-        variant_name: select_prediction(
-            prediction,
-            model,
-            parse_class_name,
-        )
-        for variant_name, prediction in zip(VARIANT_ORDER, predictions)
-    }
+    return predictions
 
 
 def load_primary_selection(result_csv):
@@ -361,10 +412,13 @@ def evaluate_primary(
             f"{sample['image'].name}"
         )
 
-        variants = create_preprocessing_variants(sample["image"])
+        variants, valid_content_bbox = create_preprocessing_variants(
+            sample["image"]
+        )
         predictions = detect_variants(
             variants,
             confidence_threshold,
+            valid_content_bbox,
         )
 
         for variant_name in VARIANT_ORDER:
@@ -421,10 +475,13 @@ def evaluate_archive(
             f"{sample['image'].name}"
         )
 
-        variants = create_preprocessing_variants(sample["image"])
+        variants, valid_content_bbox = create_preprocessing_variants(
+            sample["image"]
+        )
         predictions = detect_variants(
             variants,
             confidence_threshold,
+            valid_content_bbox,
         )
 
         for variant_name in VARIANT_ORDER:
