@@ -46,7 +46,7 @@ model_d = YOLO(
 )
 
 
-SUPPORTED_FRUITS = {
+DETECTION_SUPPORTED_FRUITS = {
     "apple",
     "banana",
     "grape",

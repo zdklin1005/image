@@ -1,0 +1,72 @@
+FRUIT IMAGE PREPROCESSING EVALUATION
+==========================================
+
+Input image: C:\Users\Kai\Documents\Image Processing\assgm\dataset\Test\freshapples\saltandpepper_Screen Shot 2018-06-08 at 5.00.12 PM.png
+Output size: 640 x 640 pixels
+Processing time: 0.065880 seconds
+Blur score: 714.8302
+Blur suitability: Acceptable
+
+Input mean brightness: 218.4753
+Input contrast score: 42.4841
+Input dynamic range: 120.0000
+Dark pixel ratio: 0.000294
+Bright pixel ratio: 0.617029
+Median filter: Applied (fixed 5 x 5)
+Bilateral filter: Applied (fixed parameters)
+
+VALIDATION CHECKS
+------------------------------------------
+PASS - original: shape and data type passed
+PASS - median: shape and data type passed
+PASS - bilateral: shape and data type passed
+PASS - clahe_analysis: shape and data type passed
+PASS - sharpened_display: shape and data type passed
+PASS - blur_score: float check passed
+PASS - is_blurry: Boolean check passed
+PASS - input exposure and contrast metrics: float checks passed
+
+DESCRIPTIVE QUALITY INDICATORS
+------------------------------------------
+
+Stage: original
+  Mean brightness: 184.7352
+  Contrast standard deviation: 68.8216
+  Entropy: 5.7085
+  Laplacian variance: 2880.9570
+  Edge density: 0.020496
+
+Stage: median
+  Mean brightness: 185.0382
+  Contrast standard deviation: 68.7441
+  Entropy: 5.6652
+  Laplacian variance: 81.7425
+  Edge density: 0.007282
+
+Stage: bilateral
+  Mean brightness: 185.0394
+  Contrast standard deviation: 68.7270
+  Entropy: 5.6714
+  Laplacian variance: 88.0025
+  Edge density: 0.007457
+
+Stage: clahe_analysis
+  Mean brightness: 179.9397
+  Contrast standard deviation: 73.0231
+  Entropy: 5.7451
+  Laplacian variance: 131.2090
+  Edge density: 0.008666
+
+Stage: sharpened_display
+  Mean brightness: 179.7578
+  Contrast standard deviation: 73.1789
+  Entropy: 5.7472
+  Laplacian variance: 223.9681
+  Edge density: 0.009248
+
+SUMMARY CHANGES
+------------------------------------------
+CLAHE contrast change from original: +4.2015
+Display sharpness change from analysis image: +92.7591
+
+These values are descriptive indicators. Visual inspection and, when available, PSNR against a matching clean reference should also be used when discussing preprocessing quality.
