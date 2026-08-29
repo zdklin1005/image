@@ -1,0 +1,71 @@
+HSV VALUE-CHANNEL CLAHE VS LAB LIGHTNESS-CHANNEL CLAHE
+============================================================
+
+Images evaluated: 170
+Ground-truth masks: unavailable
+Segmentation results below are plausibility proxies, not Dice/IoU accuracy.
+
+ALL
+---
+Images: 170
+Mean HSV/LAB mask agreement (IoU): 0.9441
+HSV proxy-valid masks: 97.65%
+LAB proxy-valid masks: 97.06%
+HSV mean mask proxy score: 0.7305
+LAB mean mask proxy score: 0.7292
+HSV mean border contact: 0.1238
+LAB mean border contact: 0.1163
+HSV mean hue drift (OpenCV hue units): 0.1544
+LAB mean hue drift (OpenCV hue units): 0.6430
+HSV mean saturation drift: 0.7719
+LAB mean saturation drift: 6.2137
+HSV mean lightness contrast gain: 1.2602
+LAB mean lightness contrast gain: 1.2855
+HSV mean processing time: 2.835 ms
+LAB mean processing time: 4.250 ms
+
+PRIMARY
+-------
+Images: 90
+Mean HSV/LAB mask agreement (IoU): 0.9762
+HSV proxy-valid masks: 98.89%
+LAB proxy-valid masks: 97.78%
+HSV mean mask proxy score: 0.8205
+LAB mean mask proxy score: 0.8153
+HSV mean border contact: 0.0653
+LAB mean border contact: 0.0659
+HSV mean hue drift (OpenCV hue units): 0.0847
+LAB mean hue drift (OpenCV hue units): 0.4054
+HSV mean saturation drift: 0.5140
+LAB mean saturation drift: 4.9695
+HSV mean lightness contrast gain: 1.0372
+LAB mean lightness contrast gain: 0.8611
+HSV mean processing time: 2.757 ms
+LAB mean processing time: 4.719 ms
+
+ARCHIVE
+-------
+Images: 80
+Mean HSV/LAB mask agreement (IoU): 0.9080
+HSV proxy-valid masks: 96.25%
+LAB proxy-valid masks: 96.25%
+HSV mean mask proxy score: 0.6292
+LAB mean mask proxy score: 0.6322
+HSV mean border contact: 0.1896
+LAB mean border contact: 0.1730
+HSV mean hue drift (OpenCV hue units): 0.2327
+LAB mean hue drift (OpenCV hue units): 0.9104
+HSV mean saturation drift: 1.0620
+LAB mean saturation drift: 7.6134
+HSV mean lightness contrast gain: 1.5111
+LAB mean lightness contrast gain: 1.7630
+HSV mean processing time: 2.923 ms
+LAB mean processing time: 3.722 ms
+
+PROXY COMPARISON COUNTS
+-----------------------
+HSV higher proxy score: 81
+LAB higher proxy score: 89
+Ties: 0
+
+Interpret all proxy results together with the saved visual panels.

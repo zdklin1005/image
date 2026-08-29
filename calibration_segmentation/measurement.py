@@ -181,3 +181,4 @@ def calculate_projected_area_cm2(
     )
 
     return fruit_area_cm2
+

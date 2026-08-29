@@ -1,0 +1,52 @@
+[
+  {
+    "test": "pineapple detection-only gate",
+    "status": "PASS",
+    "error": ""
+  },
+  {
+    "test": "contained false box suppression",
+    "status": "PASS",
+    "error": ""
+  },
+  {
+    "test": "neighbouring fruit preservation",
+    "status": "PASS",
+    "error": ""
+  },
+  {
+    "test": "adjacent fruit separation",
+    "status": "PASS",
+    "error": ""
+  },
+  {
+    "test": "contained same-fruit box deduplication",
+    "status": "PASS",
+    "error": ""
+  },
+  {
+    "test": "neighbouring same-class fruit preservation",
+    "status": "PASS",
+    "error": ""
+  },
+  {
+    "test": "Model C ripeness class gate",
+    "status": "PASS",
+    "error": ""
+  },
+  {
+    "test": "malformed box rejection",
+    "status": "PASS",
+    "error": ""
+  },
+  {
+    "test": "ripeness output hides detection-only fruit",
+    "status": "PASS",
+    "error": ""
+  },
+  {
+    "test": "preprocessing output and content-mask contract",
+    "status": "PASS",
+    "error": ""
+  }
+]
