@@ -26,6 +26,7 @@ def process_image(
     conf_c: float,
     conf_d: float,
     iou_threshold: float,
+    pixels_per_cm: float,
 ):
     cv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
     results, annotated_cv = pipeline.analyze_image(
@@ -34,6 +35,7 @@ def process_image(
         confidence_threshold_c=conf_c,
         confidence_threshold_d=conf_d,
         iou_threshold=iou_threshold,
+        pixels_per_cm=pixels_per_cm,
     )
     annotated_image = Image.fromarray(cv2.cvtColor(annotated_cv, cv2.COLOR_BGR2RGB))
     return annotated_image, results
@@ -83,6 +85,10 @@ if uploaded:
             "Fusion IoU threshold", 0.0, 1.0, 0.30, 0.05,
             help="How much bounding-box overlap is required to treat detections from different models as the same physical fruit.",
         )
+        pixels_per_cm = st.number_input(
+            "Size calibration (pixels per cm)", min_value=1.0, value=20.0, step=1.0,
+            help="Fixed scale used to convert fruit size from pixels to cm². Adjust if your camera setup/distance changes.",
+        )
 
     suffix = pathlib.Path(uploaded.name).suffix or ".jpg"
     stages = run_stages_1_2(uploaded.getvalue(), suffix)
@@ -97,7 +103,7 @@ if uploaded:
 
     start = time.time()
     annotated, results = process_image(
-        detect_input, confidence_threshold, confidence_threshold, conf_d, iou_threshold
+        detect_input, confidence_threshold, confidence_threshold, conf_d, iou_threshold, pixels_per_cm
     )
     elapsed_ms = (time.time() - start) * 1000
 
@@ -112,27 +118,42 @@ if uploaded:
 
     metrics = get_metrics(results)
 
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("Fruits detected", metrics["count"])
     m2.metric("Avg. confidence", f"{metrics['avg_confidence']*100:.1f}%")
     m3.metric("Avg. blemish", f"{metrics['avg_blemish_pct']:.1f}%")
-    m4.metric("Time", f"{elapsed_ms:.0f} ms")
+    m4.metric("Blur score", f"{stages['blur_score']:.1f}", help="Lower means blurrier. A warning is shown above if this is too low.")
+    m5.metric("Time", f"{elapsed_ms:.0f} ms")
 
     if results:
         table = pd.DataFrame(results)[
-            ["fruit_type", "ripeness", "ripeness_confidence", "detection_confidence", "blemish_percentage", "agreement"]
+            ["fruit_type", "ripeness", "ripeness_confidence", "detection_confidence", "blemish_percentage", "fruit_area_cm2", "agreement"]
         ]
         st.dataframe(table, use_container_width=True)
 
         with st.expander("Per-fruit detail"):
             for i, r in enumerate(results, start=1):
                 st.markdown(f"**Fruit {i}: {r['fruit_type']} ({r['ripeness']})**")
+
+                d1, d2, d3 = st.columns(3)
+                d1.metric("Ripeness confidence", f"{r['ripeness_confidence']*100:.0f}%")
+                if r["blemish_percentage"] is not None:
+                    severity = (
+                        "Low" if r["blemish_percentage"] < 5
+                        else "Moderate" if r["blemish_percentage"] < 15
+                        else "High"
+                    )
+                    d2.metric("Blemish", f"{r['blemish_percentage']:.1f}%", severity)
+                else:
+                    d2.metric("Blemish", "N/A")
+                d3.metric("Size", f"{r['fruit_area_cm2']:.1f} cm²" if r["fruit_area_cm2"] is not None else "N/A")
+
                 c1, c2 = st.columns(2)
                 c1.image(cv2.cvtColor(r["crop"], cv2.COLOR_BGR2RGB), caption="Crop")
                 if r["blemish_overlay"] is not None:
                     c2.image(
                         cv2.cvtColor(r["blemish_overlay"], cv2.COLOR_BGR2RGB),
-                        caption=f"Blemish overlay ({r['blemish_percentage']:.1f}%)",
+                        caption="Blemish overlay",
                     )
                 else:
                     c2.caption("Blemish detection unavailable for this crop.")
