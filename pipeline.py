@@ -37,14 +37,16 @@ from fruit_ripeness_object_detection.ripeness_classification import (
 from fruit_ripeness_object_detection.blemish import detect_fruit_blemish
 
 from calibration_segmentation.segmentation import segment_fruit_otsu, refine_fruit_mask
-from calibration_segmentation.measurement import extract_main_fruit
+from calibration_segmentation.measurement import extract_main_fruit, calculate_projected_area_cm2
 
 
-def _get_fruit_mask(crop_bgr):
+def _segment_fruit(crop_bgr):
     """
-    Segments the dominant fruit body out of a cropped fruit image, for
-    blemish detection. Returns None if segmentation fails (e.g. the
-    crop is too small/uniform for a contour to be found).
+    Segments the dominant fruit body out of a cropped fruit image.
+    Used for both blemish detection and size measurement, so it's
+    only run once per fruit. Returns (fruit_mask, fruit_area_pixels)
+    or (None, None) if segmentation fails (e.g. the crop is too
+    small/uniform for a contour to be found).
     """
     try:
         (
@@ -52,10 +54,10 @@ def _get_fruit_mask(crop_bgr):
             saturation_image, saturation_mask, saturation_threshold,
         ) = segment_fruit_otsu(crop_bgr)
         _, refined_mask = refine_fruit_mask(saturation_mask)
-        fruit_mask, _, _ = extract_main_fruit(refined_mask)
-        return fruit_mask
+        fruit_mask, _, fruit_area_pixels = extract_main_fruit(refined_mask)
+        return fruit_mask, fruit_area_pixels
     except ValueError:
-        return None
+        return None, None
 
 
 def analyze_image(
@@ -64,15 +66,22 @@ def analyze_image(
     confidence_threshold_c=0.40,
     confidence_threshold_d=0.30,
     iou_threshold=0.30,
+    pixels_per_cm=20.0,
 ):
     """
     Runs the full pipeline on one BGR image.
+
+    pixels_per_cm: a fixed/preset spatial scale used to convert each
+    fruit's projected area from pixels to cm^2. No perspective/manual
+    calibration is applied here -- see sizing.py's manual mode if a
+    per-photo calibrated scale is needed later.
 
     Returns:
         results: list of per-fruit dicts:
             fruit_type, detection_confidence, agreement, bounding_box,
             ripeness, ripeness_confidence, blemish_percentage,
-            blemish_overlay (or None if segmentation failed), crop
+            blemish_overlay (or None if segmentation failed),
+            fruit_area_cm2 (or None if segmentation failed), crop
         annotated_image: BGR image with bounding boxes + labels drawn
     """
     detections_a = detect_with_model_a(image_bgr, confidence_threshold_a)
@@ -105,11 +114,18 @@ def analyze_image(
             result_e,
         )
 
-        # ---- Blemish detection ----
-        fruit_mask = _get_fruit_mask(crop)
+        # ---- Segmentation (shared by blemish detection + size) ----
+        fruit_mask, fruit_area_pixels = _segment_fruit(crop)
+
         blemish_result = (
             detect_fruit_blemish(crop, fruit_mask, fruit_type)
             if fruit_mask is not None
+            else None
+        )
+
+        fruit_area_cm2 = (
+            calculate_projected_area_cm2(fruit_area_pixels, pixels_per_cm, pixels_per_cm)
+            if fruit_area_pixels is not None
             else None
         )
 
@@ -126,6 +142,7 @@ def analyze_image(
             "blemish_overlay": (
                 blemish_result["blemish_overlay"] if blemish_result else None
             ),
+            "fruit_area_cm2": fruit_area_cm2,
             "crop": crop,
         })
 
