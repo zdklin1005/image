@@ -186,7 +186,25 @@ if uploaded:
 
     if save_submitted:
         rating = "good" if rating_label == "👍 Good" else "bad"
-        run_id = add_run(st.session_state.user_email, metrics["count"], metrics["avg_confidence"], elapsed_ms)
+
+        detections_summary = [
+            {
+                "fruit_type": r["fruit_type"],
+                "ripeness": r["ripeness"],
+                "confidence": r["detection_confidence"],
+            }
+            for r in results
+        ]
+
+        run_id = add_run(
+            created_by=st.session_state.user_email,
+            fruit_count=metrics["count"],
+            avg_confidence=metrics["avg_confidence"],
+            processing_time_ms=elapsed_ms,
+            is_blurry=stages["is_blurry"],
+            calibrated=True,   # pixels_per_cm is always applied now — see note below
+            detections=detections_summary,
+        )
         add_feedback(run_id, st.session_state.user_email, rating, comment)
         st.success("Run and feedback saved. Check Analysis History or Dashboard for it.")
 
