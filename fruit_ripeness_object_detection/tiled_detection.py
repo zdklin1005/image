@@ -1,8 +1,8 @@
-"""Prepare overlapping image tiles for high-resolution YOLO inference."""
+"""Prepare overlapping image tiles for high-resolution object detection."""
 
 import cv2
 
-from .preprocessing import (
+from preprocessing.preprocessing import (
     add_letterbox_padding,
     create_valid_content_mask,
     resize_preserving_aspect_ratio,

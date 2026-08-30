@@ -16,15 +16,15 @@
       "any_hit_recall": 0.8071428571428572,
       "no_detection": 3,
       "false_positive_boxes": 52,
-      "duplicate_expected_boxes": 46
+      "duplicate_expected_boxes": 49
     },
     "by_expected_fruit": {
       "Apple": {
         "images": 40,
-        "top1_correct": 37,
-        "top1_accuracy": 0.925,
-        "any_hit": 37,
-        "any_hit_recall": 0.925,
+        "top1_correct": 38,
+        "top1_accuracy": 0.95,
+        "any_hit": 38,
+        "any_hit_recall": 0.95,
         "no_detection": 0,
         "false_positive_boxes": 3,
         "duplicate_expected_boxes": 17
@@ -41,13 +41,13 @@
       },
       "Grape": {
         "images": 20,
-        "top1_correct": 20,
-        "top1_accuracy": 1.0,
-        "any_hit": 20,
-        "any_hit_recall": 1.0,
+        "top1_correct": 19,
+        "top1_accuracy": 0.95,
+        "any_hit": 19,
+        "any_hit_recall": 0.95,
         "no_detection": 0,
         "false_positive_boxes": 2,
-        "duplicate_expected_boxes": 23
+        "duplicate_expected_boxes": 26
       },
       "Mango": {
         "images": 20,
@@ -74,13 +74,13 @@
   "diagnostic_restricted_model_a_policy": {
     "overall": {
       "images": 140,
-      "top1_correct": 101,
-      "top1_accuracy": 0.7214285714285714,
-      "any_hit": 101,
-      "any_hit_recall": 0.7214285714285714,
-      "no_detection": 12,
-      "false_positive_boxes": 34,
-      "duplicate_expected_boxes": 26
+      "top1_correct": 99,
+      "top1_accuracy": 0.7071428571428572,
+      "any_hit": 99,
+      "any_hit_recall": 0.7071428571428572,
+      "no_detection": 15,
+      "false_positive_boxes": 35,
+      "duplicate_expected_boxes": 31
     },
     "by_expected_fruit": {
       "Apple": {
@@ -90,28 +90,28 @@
         "any_hit": 32,
         "any_hit_recall": 0.8,
         "no_detection": 3,
-        "false_positive_boxes": 5,
+        "false_positive_boxes": 7,
         "duplicate_expected_boxes": 2
       },
       "Banana": {
         "images": 40,
-        "top1_correct": 37,
-        "top1_accuracy": 0.925,
-        "any_hit": 37,
-        "any_hit_recall": 0.925,
-        "no_detection": 3,
+        "top1_correct": 36,
+        "top1_accuracy": 0.9,
+        "any_hit": 36,
+        "any_hit_recall": 0.9,
+        "no_detection": 4,
         "false_positive_boxes": 0,
-        "duplicate_expected_boxes": 1
+        "duplicate_expected_boxes": 2
       },
       "Grape": {
         "images": 20,
-        "top1_correct": 15,
-        "top1_accuracy": 0.75,
-        "any_hit": 15,
-        "any_hit_recall": 0.75,
+        "top1_correct": 14,
+        "top1_accuracy": 0.7,
+        "any_hit": 14,
+        "any_hit_recall": 0.7,
         "no_detection": 2,
         "false_positive_boxes": 4,
-        "duplicate_expected_boxes": 22
+        "duplicate_expected_boxes": 26
       },
       "Mango": {
         "images": 20,
@@ -119,8 +119,8 @@
         "top1_accuracy": 0.0,
         "any_hit": 0,
         "any_hit_recall": 0.0,
-        "no_detection": 4,
-        "false_positive_boxes": 22,
+        "no_detection": 6,
+        "false_positive_boxes": 21,
         "duplicate_expected_boxes": 0
       },
       "Orange": {
@@ -136,9 +136,9 @@
     }
   },
   "comparison": {
-    "top1_gained_with_unrestricted_model_a": 12,
+    "top1_gained_with_unrestricted_model_a": 14,
     "top1_lost_with_unrestricted_model_a": 0,
-    "any_hit_gained_with_unrestricted_model_a": 12,
+    "any_hit_gained_with_unrestricted_model_a": 14,
     "any_hit_lost_with_unrestricted_model_a": 0
   }
 }
