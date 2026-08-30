@@ -148,13 +148,13 @@ if __name__ == "__main__":
     image_path = (
         project_folder
         / "test_images"
-        / "watermelon_01.jpg"
+        / "pear_05.jpg"
     )
 
     output_path = (
         project_folder
         / "ground_truth"
-        / "watermelon_01.png"
+        / "pear_05.png"
     )
 
     create_ground_truth_mask(
